@@ -623,6 +623,17 @@ class TemplateFlow {
                 <input type="text" value="${this.template.name || 'Untitled'}" onkeyup="app.template.name = this.value">
             </div>
             
+            <div class="input-row">
+                <div class="property-group">
+                    <label>Canvas Width</label>
+                    <input type="number" value="${this.template.width}" onchange="app.updateTemplateSize('width', this.value)">
+                </div>
+                <div class="property-group">
+                    <label>Canvas Height</label>
+                    <input type="number" value="${this.template.height}" onchange="app.updateTemplateSize('height', this.value)">
+                </div>
+            </div>
+            
             <div class="sidebar-section-title">Template Framing</div>
             <div class="input-row">
                 <div class="property-group">
@@ -637,6 +648,11 @@ class TemplateFlow {
             <p class="empty-state" style="margin-top: 2rem;">Select a layer to edit layer-specific properties</p>
         `;
         this.propertiesContent.innerHTML = html;
+    }
+
+    updateTemplateSize(prop, value) {
+        this.template[prop] = parseInt(value) || 0;
+        this.render();
     }
 
     updateTemplateBorder(prop, value) {
