@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TemplateFlow | Professional Template Creator</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Montserrat:wght@400;600;700&family=Playfair+Display:wght@400;700&family=Roboto:wght@400;700&family=Lora:wght@400;700&display=swap"
+        rel="stylesheet">
+</head>
+
+<body class="dark-theme">
+    <div id="app">
+        <!-- Header -->
+        <header class="glass-header">
+            <div class="logo">
+                <span class="gradient-text">TemplateFlow</span>
+            </div>
+            <div class="header-actions">
+                <button id="saveTemplate" class="btn primary">Save Template</button>
+                <button id="renderImage" class="btn secondary">Render Image</button>
+            </div>
+        </header>
+
+        <main class="editor-container">
+            <!-- Left Sidebar: Layer Management -->
+            <aside class="sidebar glass-panel" id="layerPanel">
+                <div class="sidebar-header">
+                    <h3>Layers</h3>
+                    <div class="layer-actions">
+                        <button id="addTextLayer" title="Add Text Layer">+</button>
+                        <button id="addImageLayer" title="Add Image Layer">🖼️</button>
+                    </div>
+                </div>
+                <ul id="layerList" class="layer-list">
+                    <!-- Layers will be injected here -->
+                </ul>
+            </aside>
+
+            <!-- Center: Workspace / Preview -->
+            <section class="workspace" id="workspace">
+                <div class="canvas-container">
+                    <div id="canvas" class="template-canvas">
+                        <!-- Layer elements will be rendered here -->
+                    </div>
+                </div>
+            </section>
+
+            <!-- Right Sidebar: Properties -->
+            <aside class="sidebar glass-panel" id="propertyPanel">
+                <div class="sidebar-header">
+                    <h3>Properties</h3>
+                </div>
+                <div id="propertiesContent" class="properties-content">
+                    <p class="empty-state">Select a layer to edit properties</p>
+                </div>
+            </aside>
+        </main>
+
+        <!-- Footer / Status Bar -->
+        <!-- Modal for Templates Gallery -->
+        <div id="templatesModal" class="modal">
+            <div class="modal-content glass-panel" style="max-width: 1000px;">
+                <span class="close" id="templatesClose">&times;</span>
+                <h2>My Templates</h2>
+                <div id="templatesList" class="templates-gallery">
+                    <p>Loading templates...</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Toast Notification -->
+        <div id="toastContainer" class="toast-container"></div>
+
+        <footer class="glass-footer">
+            <div id="statusMessage">Ready</div>
+        </footer>
+
+        <!-- Modal for Rendered Output -->
+        <div id="renderModal" class="modal">
+            <div class="modal-content glass-panel">
+                <span class="close">&times;</span>
+                <h2>Rendered Output</h2>
+                <div id="renderResult">
+                    <p>Rendering...</p>
+                </div>
+                <div class="modal-actions">
+                    <a id="downloadImage" href="#" download="template.jpg" class="btn primary">Download</a>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script type="module" src="app.js"></script>
+</body>
+
+</html>
