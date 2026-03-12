@@ -16,6 +16,7 @@ class TemplateFlow {
             name: "New Template",
             width: 1200,
             height: 1800,
+            background: '#ffffff',
             border: { width: 0, color: '#000000' },
             layers: []
         };
@@ -389,6 +390,7 @@ class TemplateFlow {
         // Apply scale and dimensions to canvas
         this.canvas.style.width = `${this.template.width * this.scale}px`;
         this.canvas.style.height = `${this.template.height * this.scale}px`;
+        this.canvas.style.backgroundColor = this.template.background || '#ffffff';
 
         // Template Border (Framing)
         if (this.template.border && this.template.border.width > 0) {
@@ -656,6 +658,12 @@ class TemplateFlow {
                 </div>
             </div>
             
+            <div class="sidebar-section-title">Canvas Styling</div>
+            <div class="property-group">
+                <label>Background Color</label>
+                <input type="color" value="${this.template.background || '#ffffff'}" onchange="app.updateTemplateProperty('background', this.value)">
+            </div>
+
             <div class="sidebar-section-title">Template Framing</div>
             <div class="input-row">
                 <div class="property-group">
@@ -674,6 +682,11 @@ class TemplateFlow {
 
     updateTemplateSize(prop, value) {
         this.template[prop] = parseInt(value) || 0;
+        this.render();
+    }
+
+    updateTemplateProperty(prop, value) {
+        this.template[prop] = value;
         this.render();
     }
 
@@ -696,6 +709,7 @@ class TemplateFlow {
             name: this.template.name || "Untitled Template",
             width: this.template.width,
             height: this.template.height,
+            background: this.template.background,
             layers: apiLayers
         };
 
@@ -828,27 +842,43 @@ class TemplateFlow {
     }
 
     generateMiniPreview(tpl) {
-        // Create a visual representation of layers in the card
+        // If the template already has a screenshot or thumbnail from Templated.io, use it!
+        // This is the "actual template image" the user is looking for.
+        if (tpl.screenshot_url) {
+            return `<img src="${tpl.screenshot_url}" style="width: 100%; height: 100%; object-fit: contain;">`;
+        }
+        if (tpl.thumbnail_url) {
+            return `<img src="${tpl.thumbnail_url}" style="width: 100%; height: 100%; object-fit: contain;">`;
+        }
+
+        // Fallback: Create a detailed visual representation
         const layers = tpl.layers ? (Array.isArray(tpl.layers) ? tpl.layers : Object.values(tpl.layers)) : [];
         if (layers.length === 0) return '<div class="empty-preview">Empty Template</div>';
 
         const scale = 140 / Math.max(tpl.width, tpl.height);
-        const elements = layers.slice(0, 10).map(l => {
+        const elements = layers.slice(0, 15).map(l => {
+            let inner = '';
+            if (l.type === 'image' && l.image_url) {
+                inner = `<img src="${l.image_url}" style="width: 100%; height: 100%; object-fit: cover; opacity: 0.8;">`;
+            } else if (l.type === 'text') {
+                inner = `<div style="color: ${l.color || '#000'}; font-size: 2px; padding: 1px; overflow: hidden;">${l.text || ''}</div>`;
+            }
+
             const style = `
                 position: absolute;
                 left: ${(l.x || 0) * scale}px;
                 top: ${(l.y || 0) * scale}px;
                 width: ${(l.width || 50) * scale}px;
                 height: ${(l.height || 20) * scale}px;
-                background: ${l.type === 'image' ? 'rgba(99, 102, 241, 0.2)' : 'rgba(255, 255, 255, 0.1)'};
-                border: 1px solid rgba(255,255,255,0.05);
-                font-size: 2px;
+                background: ${l.type === 'image' ? 'rgba(99, 102, 241, 0.1)' : 'rgba(255, 255, 255, 0.2)'};
+                border: 0.1px solid rgba(0,0,0,0.1);
                 overflow: hidden;
+                display: flex;
             `;
-            return `<div style="${style}"></div>`;
+            return `<div style="${style}">${inner}</div>`;
         }).join('');
 
-        return `<div class="mini-artboard" style="width: ${tpl.width * scale}px; height: ${tpl.height * scale}px;">${elements}</div>`;
+        return `<div class="mini-artboard" style="width: ${tpl.width * scale}px; height: ${tpl.height * scale}px; background-color: ${tpl.background || '#fff'}">${elements}</div>`;
     }
 
     async deleteRemoteTemplate(id, name) {
@@ -888,6 +918,7 @@ class TemplateFlow {
             name: "New Template",
             width: 1200,
             height: 1800,
+            background: '#ffffff',
             border: { width: 0, color: '#000000' },
             layers: []
         };
@@ -904,6 +935,7 @@ class TemplateFlow {
         this.template.name = tpl.name;
         this.template.width = tpl.width;
         this.template.height = tpl.height;
+        this.template.background = tpl.background || '#ffffff';
 
         // Deep clone layers from the template
         if (tpl.layers) {
