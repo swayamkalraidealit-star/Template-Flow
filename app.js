@@ -46,11 +46,15 @@ class TemplateFlow {
         this.toastContainer = document.getElementById('toastContainer');
 
         // Buttons
+        this.showGalleryBtn = document.getElementById('showGallery');
+        this.newTemplateBtn = document.getElementById('newTemplate');
         this.addTextBtn = document.getElementById('addTextLayer');
         this.addImageBtn = document.getElementById('addImageLayer');
         this.saveBtn = document.getElementById('saveTemplate');
         this.renderBtn = document.getElementById('renderImage');
         this.downloadBtn = document.getElementById('downloadImage');
+        this.deleteActiveBtn = document.getElementById('deleteTemplate');
+        this.saveCopyBtn = document.getElementById('saveCopy');
 
         // Modals
         this.renderModal = document.getElementById('renderModal');
@@ -61,10 +65,18 @@ class TemplateFlow {
     }
 
     bindEvents() {
+        this.showGalleryBtn.addEventListener('click', () => this.showTemplatesGallery());
+        this.newTemplateBtn.addEventListener('click', () => this.createNewTemplate());
         this.addTextBtn.addEventListener('click', () => this.addLayer('text'));
         this.addImageBtn.addEventListener('click', () => this.addLayer('image'));
         this.saveBtn.addEventListener('click', () => this.saveTemplate());
+        this.saveCopyBtn.addEventListener('click', () => this.saveAsCopy());
         this.renderBtn.addEventListener('click', () => this.renderImage());
+        this.deleteActiveBtn.addEventListener('click', () => {
+            if (this.templateId) {
+                this.deleteRemoteTemplate(this.templateId, this.template.name);
+            }
+        });
         this.renderClose.addEventListener('click', () => this.renderModal.style.display = 'none');
         this.templatesClose.addEventListener('click', () => this.templatesModal.style.display = 'none');
         window.addEventListener('click', (e) => {
@@ -338,6 +350,16 @@ class TemplateFlow {
         this.renderLayerList();
         this.renderCanvas();
         this.renderProperties();
+        this.updateHeaderButtons();
+    }
+
+    updateHeaderButtons() {
+        if (this.deleteActiveBtn) {
+            this.deleteActiveBtn.style.display = this.templateId ? 'inline-flex' : 'none';
+        }
+        if (this.saveCopyBtn) {
+            this.saveCopyBtn.style.display = this.templateId ? 'inline-flex' : 'none';
+        }
     }
 
     renderLayerList() {
@@ -679,8 +701,10 @@ class TemplateFlow {
 
         try {
             // If we have a templateId, we UPDATE. Otherwise, we CREATE.
+            // When updating, we use ?replaceLayers=true to ensure layers removed in the editor 
+            // are also removed on the server (Full Overwrite).
             const url = this.templateId
-                ? `https://api.templated.io/v1/template/${this.templateId}`
+                ? `https://api.templated.io/v1/template/${this.templateId}?replaceLayers=true`
                 : 'https://api.templated.io/v1/template';
 
             const method = this.templateId ? 'PUT' : 'POST';
@@ -711,11 +735,26 @@ class TemplateFlow {
         }
     }
 
+    async saveAsCopy() {
+        if (!confirm('Save a copy of this template?')) return;
+        
+        const oldName = this.template.name;
+        this.templateId = null; // Force create
+        this.template.name = `${oldName} (Copy)`;
+        
+        this.updateStatus('Saving as new template...');
+        await this.saveTemplate();
+        
+        this.render(); // This will trigger updateHeaderButtons via render()
+        this.showToast('Created copy!', '📑');
+    }
+
     async fetchTemplates() {
         if (!this.templatedApiKey) return [];
 
         try {
-            const response = await fetch('https://api.templated.io/v1/templates', {
+            // Added includeLayers and includePages to ensure we get the full design data
+            const response = await fetch('https://api.templated.io/v1/templates?includeLayers=true&includePages=true', {
                 headers: { 'Authorization': `Bearer ${this.templatedApiKey}` }
             });
             return await response.json();
@@ -725,9 +764,26 @@ class TemplateFlow {
         }
     }
 
+    async updateTags(templateId, tags) {
+        if (!this.templatedApiKey) return;
+        try {
+            const response = await fetch(`https://api.templated.io/v1/template/${templateId}/tags`, {
+                method: 'PUT',
+                headers: {
+                    'Authorization': `Bearer ${this.templatedApiKey}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(tags)
+            });
+            return await response.json();
+        } catch (error) {
+            console.error('Tag update error:', error);
+        }
+    }
+
     async showTemplatesGallery() {
         this.templatesModal.style.display = 'block';
-        this.templatesList.innerHTML = '<div class="loader"></div><p>Fetching your designs...</p>';
+        this.templatesList.innerHTML = '<div class="loader-container"><div class="loader"></div><p>Fetching your designs...</p></div>';
 
         const templates = await this.fetchTemplates();
 
@@ -740,15 +796,105 @@ class TemplateFlow {
         templates.forEach(tpl => {
             const card = document.createElement('div');
             card.className = 'template-card';
+            
+            // Get layer count safely
+            const layers = tpl.layers ? (Array.isArray(tpl.layers) ? tpl.layers : Object.keys(tpl.layers)) : [];
+            const layersCount = layers.length;
+            
             card.innerHTML = `
-                <h4>${tpl.name || 'Untitled'}</h4>
-                <div class="meta">ID: ${tpl.id}</div>
-                <div class="meta">Type: ${tpl.format.toUpperCase()} | ${tpl.width}x${tpl.height}</div>
-                <button class="btn primary small" style="width: 100%; margin-top: 10px;">Load & Edit</button>
+                <button class="delete-template-btn" title="Delete Template">&times;</button>
+                <div class="template-preview-stunt">
+                    ${this.generateMiniPreview(tpl)}
+                </div>
+                <div class="card-content">
+                    <h4>${tpl.name || 'Untitled'}</h4>
+                    <div class="meta-tag-row">
+                        <span class="badge">${tpl.width}x${tpl.height}</span>
+                        <span class="badge secondary">${layersCount} Layers</span>
+                    </div>
+                </div>
+                <button class="btn primary small-full load-btn" style="width: 100%; margin-top: 10px;">Load & Edit</button>
             `;
+
+            // Delete click
+            card.querySelector('.delete-template-btn').addEventListener('click', (e) => {
+                e.stopPropagation();
+                this.deleteRemoteTemplate(tpl.id, tpl.name);
+            });
+
             card.addEventListener('click', () => this.loadTemplate(tpl));
             this.templatesList.appendChild(card);
         });
+    }
+
+    generateMiniPreview(tpl) {
+        // Create a visual representation of layers in the card
+        const layers = tpl.layers ? (Array.isArray(tpl.layers) ? tpl.layers : Object.values(tpl.layers)) : [];
+        if (layers.length === 0) return '<div class="empty-preview">Empty Template</div>';
+
+        const scale = 140 / Math.max(tpl.width, tpl.height);
+        const elements = layers.slice(0, 10).map(l => {
+            const style = `
+                position: absolute;
+                left: ${(l.x || 0) * scale}px;
+                top: ${(l.y || 0) * scale}px;
+                width: ${(l.width || 50) * scale}px;
+                height: ${(l.height || 20) * scale}px;
+                background: ${l.type === 'image' ? 'rgba(99, 102, 241, 0.2)' : 'rgba(255, 255, 255, 0.1)'};
+                border: 1px solid rgba(255,255,255,0.05);
+                font-size: 2px;
+                overflow: hidden;
+            `;
+            return `<div style="${style}"></div>`;
+        }).join('');
+
+        return `<div class="mini-artboard" style="width: ${tpl.width * scale}px; height: ${tpl.height * scale}px;">${elements}</div>`;
+    }
+
+    async deleteRemoteTemplate(id, name) {
+        if (!confirm(`Are you sure you want to delete "${name}"? This action cannot be undone.`)) return;
+
+        this.updateStatus(`Deleting template ${id}...`);
+        try {
+            const response = await fetch(`https://api.templated.io/v1/template/${id}`, {
+                method: 'DELETE',
+                headers: {
+                    'Authorization': `Bearer ${this.templatedApiKey}`
+                }
+            });
+
+            if (response.status === 204 || response.ok) {
+                this.updateStatus('Template deleted successfully');
+                this.showToast('Template deleted', '🗑️');
+                // Refresh gallery
+                this.showTemplatesGallery();
+                // If the deleted template was the current one, reset
+                if (this.templateId === id) {
+                    this.templateId = null;
+                }
+            } else {
+                this.updateStatus('Failed to delete template');
+            }
+        } catch (error) {
+            this.updateStatus(`Error: ${error.message}`);
+        }
+    }
+
+    createNewTemplate() {
+        if (this.template.layers.length > 0 && !confirm('Create new template? Current unsaved changes will be lost.')) return;
+
+        this.templateId = null;
+        this.template = {
+            name: "New Template",
+            width: 1200,
+            height: 1800,
+            border: { width: 0, color: '#000000' },
+            layers: []
+        };
+        this.selectedLayerIds.clear();
+        this.render();
+        this.updateStatus('Started new template');
+        this.showToast('New canvas ready', '✨');
     }
 
     loadTemplate(tpl) {
@@ -850,9 +996,14 @@ class TemplateFlow {
                     // Setup direct download click handler
                     this.downloadBtn.onclick = async (e) => {
                         e.preventDefault();
-                        this.updateStatus('Downloading to your device...');
+                        this.updateStatus('Downloading...');
+
                         try {
-                            const response = await fetch(renderUrl);
+                            // On Vercel/Production, the direct fetch might fail due to CORS.
+                            // We try the download but provide a clear fallback if it fails.
+                            const response = await fetch(renderUrl, { mode: 'cors' });
+                            if (!response.ok) throw new Error('CORS issue');
+
                             const blob = await response.blob();
                             const blobUrl = window.URL.createObjectURL(blob);
                             const link = document.createElement('a');
@@ -862,13 +1013,20 @@ class TemplateFlow {
                             link.click();
                             document.body.removeChild(link);
                             window.URL.revokeObjectURL(blobUrl);
-                            this.updateStatus('Download complete!');
+                            this.updateStatus('Success! Check your downloads.');
                         } catch (err) {
-                            console.error('Download failed:', err);
-                            // Fallback to direct link
-                            window.open(renderUrl, '_blank');
+                            console.log('Direct download blocked by CORS, opening in new tab.');
+                            // Fallback: If CORS blocks the fetch, we open the link in a new tab
+                            // The user can right-click > "Save Image As" or it might trigger auto-view.
+                            const link = document.createElement('a');
+                            link.href = renderUrl;
+                            link.target = '_blank';
+                            link.download = `${this.template.name || 'template'}.jpg`; // Might be ignored by browser for cross-origin
+                            link.click();
+                            this.updateStatus('Opening image... please save it manually.');
                         }
                     };
+
 
                     this.updateStatus('Render complete! Click download to save.');
                 }
