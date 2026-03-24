@@ -1025,32 +1025,50 @@ class TemplateFlow {
                     const renderUrl = data.render_url;
                     document.getElementById('renderResult').innerHTML = `<img src="${renderUrl}" alt="Rendered Template">`;
 
-                    // Setup direct download via CORS proxy (avoids tainted canvas & CORS fetch block)
+                    // Setup direct download click handler
                     this.downloadBtn.onclick = async (e) => {
                         e.preventDefault();
                         this.updateStatus('Downloading...');
 
                         try {
-                            // For production (Vercel), vite proxy won't work without a serverless function.
-                            // We use a reliable public CORS proxy to fetch the image blob.
-                            const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(renderUrl)}`;
+                            const renderUrlObj = new URL(renderUrl);
+                            let fetchUrl = renderUrl;
                             
-                            const res = await fetch(proxyUrl);
-                            if (!res.ok) throw new Error(`Proxy fetch failed: ${res.status}`);
+                            // Check if running locally (dev) vs production (Vercel)
+                            const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+                            
+                            if (isLocal) {
+                                // Use Vite proxy locally
+                                fetchUrl = `/api/render-image${renderUrlObj.pathname}`;
+                            } else {
+                                // Use public CORS proxy in production since Vercel static hosting drops the Vite proxy
+                                fetchUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(renderUrl)}`;
+                            }
 
-                            const blob = await res.blob();
-                            const blobUrl = window.URL.createObjectURL(blob);
+                            // Create a hidden link to trigger the browser's native download process
+                            // This completely skips downloading it fully into Javascript memory first via blob().
                             const link = document.createElement('a');
-                            link.href = blobUrl;
+                            link.href = fetchUrl;
                             link.download = `${this.template.name || 'template'}.jpg`;
+                            
+                            // Appending to body is required for cross-browser support (e.g., Firefox)
                             document.body.appendChild(link);
                             link.click();
                             document.body.removeChild(link);
-                            window.URL.revokeObjectURL(blobUrl);
-                            this.updateStatus('Success! Check your downloads.');
+                            
+                            this.updateStatus('Success! Download started instantly.');
                         } catch (err) {
                             console.error('Download failed:', err);
-                            this.updateStatus('Download failed. Try right-clicking the image to save it.');
+                            
+                            // Last resort fallback: open in new tab
+                            console.log('Falling back to opening in new tab.');
+                            const link = document.createElement('a');
+                            link.href = renderUrl;
+                            link.target = '_blank';
+                            link.download = `${this.template.name || 'template'}.jpg`;
+                            link.click();
+                            
+                            this.updateStatus('Opening image... please save it manually.');
                         }
                     };
 
