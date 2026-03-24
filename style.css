@@ -53,8 +53,8 @@ body {
 
 @media (min-width: 1201px) {
     body {
-        overflow: hidden;
-        height: 100vh;
+        overflow-y: auto;
+        min-height: 100vh;
     }
 }
 
@@ -104,17 +104,22 @@ body {
     flex: 1;
     gap: 1rem;
     padding: 1rem;
-    overflow: hidden;
+    overflow-y: visible; /* Changed from hidden so the content can expand */
 }
 
 .sidebar {
     width: 300px;
-    flex-shrink: 0;
     display: flex;
     flex-direction: column;
     padding: 1.5rem;
     transition: all 0.3s ease;
     z-index: 10;
+    
+    /* Make sidebars sticky so they scroll naturally but stay visible */
+    position: sticky;
+    top: 1rem;
+    height: calc(100vh - var(--header-height) - 2rem);
+    overflow-y: auto;
 }
 
 .workspace {
