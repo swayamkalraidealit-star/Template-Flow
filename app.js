@@ -1041,22 +1041,30 @@ class TemplateFlow {
                                 // Use Vite proxy locally
                                 fetchUrl = `/api/render-image${renderUrlObj.pathname}`;
                             } else {
-                                // Use public CORS proxy in production since Vercel static hosting drops the Vite proxy
-                                fetchUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(renderUrl)}`;
+                                // Use our own Vercel Serverless Function to proxy the image cleanly
+                                fetchUrl = `/api/proxy-image?url=${encodeURIComponent(renderUrl)}`;
                             }
 
-                            // Create a hidden link to trigger the browser's native download process
-                            // This completely skips downloading it fully into Javascript memory first via blob().
+                            // We MUST fetch the blob first. 
+                            // Browsers ignore the `download` attribute on <a> tags if the href is cross-origin.
+                            // To force a download instead of a navigation, we must download the blob into memory 
+                            // and generate a same-origin ObjectURL.
+                            const res = await fetch(fetchUrl);
+                            if (!res.ok) throw new Error(`Fetch failed: ${res.status}`);
+
+                            const blob = await res.blob();
+                            const blobUrl = window.URL.createObjectURL(blob);
+                            
                             const link = document.createElement('a');
-                            link.href = fetchUrl;
+                            link.href = blobUrl;
                             link.download = `${this.template.name || 'template'}.jpg`;
                             
-                            // Appending to body is required for cross-browser support (e.g., Firefox)
                             document.body.appendChild(link);
                             link.click();
                             document.body.removeChild(link);
+                            window.URL.revokeObjectURL(blobUrl);
                             
-                            this.updateStatus('Success! Download started instantly.');
+                            this.updateStatus('Success! Download complete.');
                         } catch (err) {
                             console.error('Download failed:', err);
                             
