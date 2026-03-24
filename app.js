@@ -1031,9 +1031,9 @@ class TemplateFlow {
                         this.updateStatus('Downloading...');
 
                         try {
-                            // Extract the path from the renderUrl (e.g., /render/uuid.jpg)
-                            const urlObj = new URL(renderUrl);
-                            const proxyUrl = `/api/render-image${urlObj.pathname}`;
+                            // For production (Vercel), vite proxy won't work without a serverless function.
+                            // We use a reliable public CORS proxy to fetch the image blob.
+                            const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(renderUrl)}`;
                             
                             const res = await fetch(proxyUrl);
                             if (!res.ok) throw new Error(`Proxy fetch failed: ${res.status}`);
