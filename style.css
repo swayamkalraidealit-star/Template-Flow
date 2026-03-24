@@ -161,6 +161,12 @@ body {
     cursor: move;
     user-select: none;
     outline: 1px dashed rgba(99, 102, 241, 0.2);
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
     /* Guide border for better visibility */
     transition: outline 0.2s ease;
 }
@@ -621,6 +627,22 @@ select:focus {
     flex-direction: column;
     gap: 0.5rem;
     min-height: 250px;
+}
+
+.workspace {
+    flex: 1;
+    background: #1a1a2e;
+    overflow: auto; /* Required for 1:1 scale scrollability */
+    position: relative;
+    padding: 3rem;
+    display: flex;
+    justify-content: center;
+    align-items: flex-start; /* Align top for better scrolling start */
+}
+
+.canvas-container {
+    padding: 50px;
+    position: relative;
 }
 
 .template-preview-stunt {

@@ -22,7 +22,7 @@ class TemplateFlow {
         };
         this.selectedLayerIds = new Set();
         this.clipboard = [];
-        this.scale = 0.5;
+        this.scale = 1.0;
 
         this.init();
     }
@@ -60,7 +60,7 @@ class TemplateFlow {
         // Modals
         this.renderModal = document.getElementById('renderModal');
         this.templatesModal = document.getElementById('templatesModal');
-        this.renderClose = document.querySelector('.close');
+        this.renderClose = document.getElementById('renderClose');
         this.templatesClose = document.getElementById('templatesClose');
         this.templatesList = document.getElementById('templatesList');
     }
@@ -132,32 +132,67 @@ class TemplateFlow {
     }
 
     calculateScale() {
-        if (!this.workspace) return 0.5;
-        const padding = window.innerWidth < 768 ? 40 : 100;
-        const availableWidth = this.workspace.clientWidth - padding;
-        const availableHeight = this.workspace.clientHeight - padding;
+        return 1.0; // Strictly 1:1 scale as requested
+    }
 
-        const scaleX = availableWidth / this.template.width;
-        const scaleY = availableHeight / this.template.height;
+    /**
+     * Parse font size from various formats (string with px, number, etc.)
+     * Converts "64px", "64", 64 to number 64
+     */
+    parseFontSize(fontSize) {
+        if (!fontSize && fontSize !== 0) return 16; // Default fallback
+        
+        // If it's a string, remove 'px' and parse
+        if (typeof fontSize === 'string') {
+            const parsed = parseInt(fontSize.replace('px', '').trim());
+            return isNaN(parsed) ? 16 : Math.max(1, parsed);
+        }
+        
+        // If it's already a number
+        if (typeof fontSize === 'number') {
+            return Math.max(1, fontSize);
+        }
+        
+        return 16; // Fallback
+    }
 
-        // Take the smaller scale to fit both dimensions
-        this.scale = Math.min(scaleX, scaleY, 1.0);
-        // Minimum scale to keep it usable
-        this.scale = Math.max(this.scale, 0.2);
-
-        return this.scale;
+    /**
+     * Parse numeric values from various formats (strings, numbers, etc.)
+     * Handles cases like "100", 100, "100px", etc.
+     */
+    parseNumericValue(value, min = 0) {
+        if (value === null || value === undefined) return min;
+        
+        if (typeof value === 'string') {
+            const parsed = parseInt(value.replace(/[^\d.-]/g, ''));
+            return isNaN(parsed) ? min : Math.max(min, parsed);
+        }
+        
+        if (typeof value === 'number') {
+            return Math.max(min, value);
+        }
+        
+        return min;
     }
 
     loadInitialLayers() {
         const defaultLayers = [
-            { layer: "text-center-1", type: "text", text: "HEADING", x: 450, y: 120, width: 300, height: 60, fontSize: 40, align: "center" },
-            { layer: "line1-text", type: "text", text: "Line 1 Content", x: 80, y: 260, width: 820, height: 160, fontSize: 42, color: "#1a1a1a" },
+            { layer: "text-center-1", type: "text", text: "HEADING", x: 450, y: 120, width: 300, height: 60, fontSize: 40, align: "center", fontWeight: "700" },
+            { layer: "line1-text", type: "text", text: "Line 1 Content", x: 80, y: 260, width: 1040, height: 160, fontSize: 42, color: "#1a1a1a" },
             { layer: "line1-image", type: "image", image_url: "https://via.placeholder.com/160", x: 960, y: 260, width: 160, height: 160 },
-            { layer: "line2-text", type: "text", text: "Line 2 Content", x: 80, y: 520, width: 820, height: 160, fontSize: 42, color: "#1a1a1a" },
+            { layer: "line2-text", type: "text", text: "Line 2 Content", x: 80, y: 520, width: 1040, height: 160, fontSize: 42, color: "#1a1a1a" },
             { layer: "line2-image", type: "image", image_url: "https://via.placeholder.com/160", x: 960, y: 520, width: 160, height: 160 }
         ];
 
-        this.template.layers = defaultLayers.map((l, i) => ({ ...l, id: `layer-${Date.now()}-${i}` }));
+        this.template.layers = defaultLayers.map((l, i) => ({ 
+            ...l, 
+            id: `layer-${Date.now()}-${i}`,
+            borderWidth: 0,
+            borderColor: '#000000',
+            letterSpacing: 0,
+            wordSpacing: 0,
+            lineHeight: 1.2
+        }));
     }
 
     addLayer(type) {
@@ -174,9 +209,12 @@ class TemplateFlow {
             fontSize: 40,
             fontWeight: '400',
             letterSpacing: 0,
-            lineHeight: 1.2,
+            wordSpacing: 0,
+            lineHeight: 1.1,
             align: 'left',
-            color: '#1a1a1a'
+            color: '#1a1a1a',
+            borderWidth: 0,
+            borderColor: '#000000'
         } : {
             id,
             layer: `image-${this.template.layers.length + 1}`,
@@ -185,7 +223,9 @@ class TemplateFlow {
             x: 100,
             y: 100,
             width: 200,
-            height: 200
+            height: 200,
+            borderWidth: 0,
+            borderColor: '#000000'
         };
 
         this.template.layers.push(newLayer);
@@ -218,9 +258,19 @@ class TemplateFlow {
     updateLayerProperty(id, prop, value, skipRenderProps = false) {
         const layer = this.template.layers.find(l => l.id === id);
         if (layer) {
-            if (['x', 'y', 'width', 'height', 'fontSize'].includes(prop)) {
-                value = parseInt(value) || 0;
+            // Special handling for font size - parse from various formats
+            if (prop === 'fontSize') {
+                value = this.parseFontSize(value);
             }
+            // Special handling for line height - convert to number
+            else if (prop === 'lineHeight') {
+                value = parseFloat(value) || 1.2;
+            }
+            // Standard numeric parsing
+            else if (['x', 'y', 'width', 'height', 'borderWidth', 'letterSpacing', 'wordSpacing'].includes(prop)) {
+                value = this.parseNumericValue(value, 0);
+            }
+            
             layer[prop] = value;
 
             // Always update visual parts
@@ -233,6 +283,15 @@ class TemplateFlow {
                 this.renderProperties();
             }
         }
+    }
+
+    updateTemplateProperty(prop, value) {
+        if (['width', 'height'].includes(prop)) {
+            value = parseInt(value) || 100;
+        }
+        this.template[prop] = value;
+        this.calculateScale();
+        this.render();
     }
 
     deleteSelectedLayers() {
@@ -347,7 +406,7 @@ class TemplateFlow {
     }
 
     render() {
-        this.calculateScale();
+        this.scale = this.calculateScale();
         this.renderLayerList();
         this.renderCanvas();
         this.renderProperties();
@@ -412,27 +471,34 @@ class TemplateFlow {
             const isSelected = this.selectedLayerIds.has(layer.id);
             const el = document.createElement('div');
             el.className = `layer-element ${isSelected ? 'selected' : ''}`;
+            el.style.position = 'absolute';
             el.style.left = `${layer.x * this.scale}px`;
             el.style.top = `${layer.y * this.scale}px`;
             el.style.width = `${layer.width * this.scale}px`;
             el.style.height = `${layer.height * this.scale}px`;
             el.style.zIndex = isSelected ? '100' : '10';
+            el.style.boxSizing = 'border-box';
+            el.style.padding = '0';
+            el.style.margin = '0';
 
             if (layer.type === 'text') {
                 el.style.fontSize = `${layer.fontSize * this.scale}px`;
                 el.style.fontWeight = layer.fontWeight || '400';
                 el.style.letterSpacing = `${(layer.letterSpacing || 0) * this.scale}px`;
-                el.style.lineHeight = layer.lineHeight || '1.2';
+                el.style.wordSpacing = `${(layer.wordSpacing || 0) * this.scale}px`;
+                el.style.lineHeight = layer.lineHeight || '1.2'; 
                 el.style.color = layer.color || '#000000';
                 el.style.textAlign = layer.align || 'left';
-                el.style.display = 'flex';
-                el.style.alignItems = (layer.align === 'center') ? 'center' : 'flex-start';
-                el.style.justifyContent = (layer.align === 'center') ? 'center' : (layer.align === 'right' ? 'flex-end' : 'flex-start');
                 el.style.fontFamily = layer.fontFamily || 'Inter';
+                el.style.display = 'flex';
+                el.style.alignItems = 'flex-start';
+                el.style.justifyContent = (layer.align === 'center' ? 'center' : (layer.align === 'right' ? 'flex-end' : 'flex-start'));
+                el.style.padding = '0';
+                el.style.margin = '0';
+                el.style.overflow = 'visible';
+                el.style.whiteSpace = 'normal';
                 el.innerText = layer.text;
-                el.style.wordBreak = 'break-word';
-                el.style.whiteSpace = 'pre-wrap'; // Preserve paragraph spacing
-                el.style.lineHeight = '1.2';
+                el.style.wordBreak = 'break-word'; 
             } else if (layer.type === 'image') {
                 const img = document.createElement('img');
                 img.src = layer.image_url;
@@ -440,6 +506,14 @@ class TemplateFlow {
                 img.style.height = '100%';
                 img.style.objectFit = 'cover';
                 el.appendChild(img);
+            }
+
+            // Apply Individual Layer Border
+            if (layer.borderWidth > 0) {
+                el.style.border = `${layer.borderWidth * this.scale}px solid ${layer.borderColor || '#000000'}`;
+                el.style.boxSizing = 'border-box';
+            } else {
+                el.style.border = 'none';
             }
 
             // Resize handle
@@ -537,6 +611,31 @@ class TemplateFlow {
             return;
         }
 
+        if (this.selectedLayerIds.size === 0) {
+            html = `
+                <div class="sidebar-section-title">Template Settings</div>
+                <div class="input-row">
+                    <div class="property-group">
+                        <label>Width (px)</label>
+                        <input type="number" value="${this.template.width}" onchange="app.updateTemplateProperty('width', this.value)">
+                    </div>
+                    <div class="property-group">
+                        <label>Height (px)</label>
+                        <input type="number" value="${this.template.height}" onchange="app.updateTemplateProperty('height', this.value)">
+                    </div>
+                </div>
+                <div class="property-group" style="margin-top: 1rem;">
+                    <label>Background Color</label>
+                    <input type="color" value="${this.template.background || '#ffffff'}" oninput="app.updateTemplateProperty('background', this.value)">
+                </div>
+                <p style="font-size: 11px; margin-top: 1rem; color: var(--text-secondary); line-height: 1.4;">
+                    Adjust the template resolution to match your target output (e.g., 1080x1080). Coordinates are absolute pixels.
+                </p>
+            `;
+            this.propertiesContent.innerHTML = html;
+            return;
+        }
+
         const selectedId = Array.from(this.selectedLayerIds)[0];
         const layer = this.template.layers.find(l => l.id === selectedId);
         let html = `
@@ -598,11 +697,15 @@ class TemplateFlow {
                     </div>
                     <div class="property-group">
                         <label>Spacing</label>
-                        <input type="number" step="0.1" value="${layer.letterSpacing || 0}" oninput="app.updateLayerProperty('${layer.id}', 'letterSpacing', this.value, true)">
+                        <input type="number" step="0.5" value="${layer.letterSpacing || 0}" oninput="app.updateLayerProperty('${layer.id}', 'letterSpacing', this.value, true)" placeholder="Ltr">
+                    </div>
+                    <div class="property-group">
+                        <label>Word Sp.</label>
+                        <input type="number" step="0.5" value="${layer.wordSpacing || 0}" oninput="app.updateLayerProperty('${layer.id}', 'wordSpacing', this.value, true)" placeholder="Word">
                     </div>
                     <div class="property-group">
                         <label>L. Height</label>
-                        <input type="number" step="0.1" value="${layer.lineHeight || 1.2}" oninput="app.updateLayerProperty('${layer.id}', 'lineHeight', this.value, true)">
+                        <input type="number" step="0.1" value="${layer.lineHeight || 1.1}" oninput="app.updateLayerProperty('${layer.id}', 'lineHeight', this.value, true)">
                     </div>
                 </div>
                 <div class="property-group">
@@ -624,6 +727,17 @@ class TemplateFlow {
                         <option value="right" ${layer.align === 'right' ? 'selected' : ''}>Right</option>
                     </select>
                 </div>
+                <div class="sidebar-section-title">Layer Border</div>
+                <div class="input-row">
+                    <div class="property-group">
+                        <label>Border Color</label>
+                        <input type="color" value="${layer.borderColor || '#000000'}" oninput="app.updateLayerProperty('${layer.id}', 'borderColor', this.value, true)">
+                    </div>
+                    <div class="property-group">
+                        <label>Border Width</label>
+                        <input type="number" value="${layer.borderWidth || 0}" oninput="app.updateLayerProperty('${layer.id}', 'borderWidth', this.value, true)">
+                    </div>
+                </div>
             `;
         } else {
             html += `
@@ -632,6 +746,17 @@ class TemplateFlow {
                     <input type="text" id="imageUrlInput" value="${layer.image_url}" onkeyup="app.updateLayerProperty('${layer.id}', 'image_url', this.value)">
                     <p style="font-size: 10px; margin-top: 5px; color: var(--text-secondary);">Or upload to Supabase:</p>
                     <input type="file" id="imageFileInput" accept="image/*" onchange="app.uploadToSupabase('${layer.id}', this.files[0])">
+                </div>
+                <div class="sidebar-section-title">Image Border</div>
+                <div class="input-row">
+                    <div class="property-group">
+                        <label>Border Color</label>
+                        <input type="color" value="${layer.borderColor || '#000000'}" oninput="app.updateLayerProperty('${layer.id}', 'borderColor', this.value, true)">
+                    </div>
+                    <div class="property-group">
+                        <label>Border Width</label>
+                        <input type="number" value="${layer.borderWidth || 0}" oninput="app.updateLayerProperty('${layer.id}', 'borderWidth', this.value, true)">
+                    </div>
                 </div>
             `;
         }
@@ -704,11 +829,42 @@ class TemplateFlow {
 
         this.updateStatus('Saving template to Templated.io...');
 
-        const apiLayers = this.template.layers.map(({ id, ...rest }) => rest);
+        // Normalize layers before saving
+        const apiLayers = this.template.layers.map(({ id, ...rest }) => {
+            const fontSize = this.parseFontSize(rest.fontSize);
+            const lineHeight = rest.lineHeight || 1.2;
+            
+            return {
+                ...rest,
+                fontSize: fontSize,
+                font_size: `${fontSize}px`,
+                font_weight: rest.fontWeight || '400',
+                x: this.parseNumericValue(rest.x, 0),
+                y: this.parseNumericValue(rest.y, 0),
+                width: this.parseNumericValue(rest.width, 100),
+                height: this.parseNumericValue(rest.height, 100),
+                letterSpacing: this.parseNumericValue(rest.letterSpacing, 0),
+                letter_spacing: this.parseNumericValue(rest.letterSpacing, 0),
+                wordSpacing: this.parseNumericValue(rest.wordSpacing, 0),
+                word_spacing: this.parseNumericValue(rest.wordSpacing, 0),
+                borderWidth: this.parseNumericValue(rest.borderWidth, 0),
+                border_width: this.parseNumericValue(rest.borderWidth, 0),
+                lineHeight: lineHeight,
+                line_height: lineHeight,
+                align: rest.align || 'left',
+                text_align: rest.align || 'left',
+                fontFamily: rest.fontFamily || 'Inter',
+                font_family: rest.fontFamily || 'Inter',
+                color: rest.color || '#1a1a1a',
+                borderColor: rest.borderColor || '#000000',
+                border_color: rest.borderColor || '#000000'
+            };
+        });
+
         const payload = {
             name: this.template.name || "Untitled Template",
-            width: this.template.width,
-            height: this.template.height,
+            width: this.parseNumericValue(this.template.width, 1080),
+            height: this.parseNumericValue(this.template.height, 1080),
             background: this.template.background,
             layers: apiLayers
         };
@@ -933,8 +1089,8 @@ class TemplateFlow {
 
         this.templateId = tpl.id;
         this.template.name = tpl.name;
-        this.template.width = tpl.width;
-        this.template.height = tpl.height;
+        this.template.width = this.parseNumericValue(tpl.width, 1080);
+        this.template.height = this.parseNumericValue(tpl.height, 1080);
         this.template.background = tpl.background || '#ffffff';
 
         // Deep clone layers from the template
@@ -943,16 +1099,33 @@ class TemplateFlow {
             // If layers is an array, we map it. If it's an object (v1/template response structure), we handle it.
             const layers = Array.isArray(tpl.layers) ? tpl.layers : Object.values(tpl.layers || {});
 
-            this.template.layers = layers.map((l, i) => ({
-                ...l,
-                id: l.id || `loaded-layer-${Date.now()}-${i}`,
-                // Ensure default props for older saved templates
-                x: l.x || 0,
-                y: l.y || 0,
-                width: l.width || 200,
-                height: l.height || 100,
-                type: l.type || (l.text ? 'text' : 'image')
-            }));
+            this.template.layers = layers.map((l, i) => {
+                // Handle both align and text_align properties from API
+                const align = l.align || l.text_align || 'left';
+                const fontFamily = l.fontFamily || l.font_family || 'Inter';
+                const fontWeight = l.fontWeight || l.font_weight || '400';
+                
+                return {
+                    ...l,
+                    id: l.id || `loaded-layer-${Date.now()}-${i}`,
+                    // Ensure default props for older saved templates and normalize numeric values
+                    x: this.parseNumericValue(l.x, 0),
+                    y: this.parseNumericValue(l.y, 0),
+                    width: this.parseNumericValue(l.width, 200),
+                    height: this.parseNumericValue(l.height, 100),
+                    fontSize: this.parseFontSize(l.fontSize || l.font_size), // Handle both camelCase and snake_case
+                    fontWeight: fontWeight,
+                    letterSpacing: this.parseNumericValue(l.letterSpacing || l.letter_spacing, 0),
+                    wordSpacing: this.parseNumericValue(l.wordSpacing || l.word_spacing, 0),
+                    lineHeight: l.lineHeight || l.line_height || 1.2,
+                    borderWidth: this.parseNumericValue(l.borderWidth || l.border_width, 0),
+                    align: align,
+                    fontFamily: fontFamily,
+                    color: l.color || '#1a1a1a',
+                    borderColor: l.borderColor || l.border_color || '#000000',
+                    type: l.type || (l.text ? 'text' : 'image')
+                };
+            });
         } else {
             this.template.layers = [];
         }
@@ -986,21 +1159,81 @@ class TemplateFlow {
             // Fallback for layer name if it's missing, using index
             const layerName = layer.layer || `layer-${index + 1}`;
 
+            // Parse all values to ensure they're valid numbers
+            const fontSize = this.parseFontSize(layer.fontSize);
+            const letterSpacing = this.parseNumericValue(layer.letterSpacing, 0);
+            const wordSpacing = this.parseNumericValue(layer.wordSpacing, 0);
+            const x = this.parseNumericValue(layer.x, 0);
+            const y = this.parseNumericValue(layer.y, 0);
+            const width = this.parseNumericValue(layer.width, 100);
+            const height = this.parseNumericValue(layer.height, 100);
+            const borderWidth = this.parseNumericValue(layer.borderWidth, 0);
+            const lineHeight = layer.lineHeight || 1.2;
+
             apiLayers[layerName] = {
+                type: layer.type,
                 text: layer.text,
                 image_url: layer.image_url,
                 color: layer.color,
-                fontSize: layer.fontSize,
-                fontWeight: layer.fontWeight,
-                letterSpacing: layer.letterSpacing,
-                lineHeight: layer.lineHeight,
-                fontFamily: layer.fontFamily,
-                x: layer.x,
-                y: layer.y,
-                width: layer.width,
-                height: layer.height
+                fontSize: fontSize,
+                font_size: `${fontSize}px`, // Send both formats for API compatibility
+                fontWeight: layer.fontWeight || '400',
+                font_weight: layer.fontWeight || '400',
+                letterSpacing: letterSpacing,
+                wordSpacing: wordSpacing,
+                letter_spacing: letterSpacing, // Fallback for snake_case
+                word_spacing: wordSpacing, // Fallback for snake_case
+                lineHeight: lineHeight,
+                line_height: lineHeight,
+                fontFamily: layer.fontFamily || 'Inter',
+                font_family: layer.fontFamily || 'Inter',
+                align: layer.align || 'left',
+                text_align: layer.align || 'left', // Send both camelCase and snake_case
+                verticalAlign: 'top',
+                vertical_align: 'top',
+                padding: 0,
+                margin: 0,
+                padding_left: 0,
+                padding_right: 0,
+                padding_top: 0,
+                padding_bottom: 0,
+                margin_left: 0,
+                margin_right: 0,
+                margin_top: 0,
+                margin_bottom: 0,
+                box_sizing: 'border-box',
+                textTransform: 'none',
+                text_transform: 'none',
+                overflow: 'visible',
+                white_space: 'normal',
+                word_wrap: 'break-word',
+                x: x,
+                y: y,
+                width: width,
+                height: height,
+                border_width: borderWidth,
+                borderWidth: borderWidth,
+                border_color: layer.borderColor || '#000000',
+                borderColor: layer.borderColor || '#000000',
+                stroke_width: 0
             };
         });
+        
+        // Inject Template-level border as a synthetic top layer
+        if (this.template.border && this.template.border.width > 0) {
+            apiLayers['template-border-layer'] = {
+                type: 'rectangle',
+                x: 0,
+                y: 0,
+                width: this.template.width,
+                height: this.template.height,
+                background_color: 'transparent',
+                border_width: this.template.border.width,
+                border_color: this.template.border.color,
+                box_sizing: 'border-box',
+                z_index: 9999 // Ensure it's on top
+            };
+        }
 
         try {
             const response = await fetch('https://api.templated.io/v1/render', {
