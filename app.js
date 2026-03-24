@@ -216,8 +216,7 @@ class TemplateFlow {
             borderWidth: 0,
             borderColor: '#000000'
         } : {
-            id,
-            layer: `image-${this.template.layers.length + 1}`,
+            layer: id, // Strictly unique identifier for the API mapping
             type: 'image',
             image_url: 'https://via.placeholder.com/200',
             x: 100,
@@ -319,8 +318,9 @@ class TemplateFlow {
         const newIds = [];
         this.clipboard.forEach(layer => {
             const newLayer = JSON.parse(JSON.stringify(layer));
-            newLayer.id = `layer-${Date.now()}-${Math.random()}`;
-            newLayer.layer = `${newLayer.layer}-copy`;
+            const newId = `layer-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+            newLayer.id = newId;
+            newLayer.layer = newId; // Maintain strict uniqueness for API mapping
             newLayer.x += offset;
             newLayer.y += offset;
 
@@ -836,6 +836,7 @@ class TemplateFlow {
             
             return {
                 ...rest,
+                layer: id, // Ensure the layer key matches our unique internal ID for perfect mapping
                 fontSize: fontSize,
                 font_size: `${fontSize}px`,
                 font_weight: rest.fontWeight || '400',
@@ -1154,11 +1155,8 @@ class TemplateFlow {
             document.getElementById('renderResult').innerHTML = '<div class="loader-container"><div class="loader"></div><p>Rendering Output...</p></div>';
         }
 
-        const apiLayers = {};
+        const apiLayers = []; // SWITCH TO ARRAY TO GUARANTEE ORDER AND PREVENT COLLISIONS
         this.template.layers.forEach((layer, index) => {
-            // Fallback for layer name if it's missing, using index
-            const layerName = layer.layer || `layer-${index + 1}`;
-
             // Parse all values to ensure they're valid numbers
             const fontSize = this.parseFontSize(layer.fontSize);
             const letterSpacing = this.parseNumericValue(layer.letterSpacing, 0);
@@ -1170,7 +1168,8 @@ class TemplateFlow {
             const borderWidth = this.parseNumericValue(layer.borderWidth, 0);
             const lineHeight = layer.lineHeight || 1.2;
 
-            apiLayers[layerName] = {
+            apiLayers.push({
+                layer: layer.id, // Use unique ID for mapping
                 type: layer.type,
                 text: layer.text,
                 image_url: layer.image_url,
@@ -1205,23 +1204,24 @@ class TemplateFlow {
                 textTransform: 'none',
                 text_transform: 'none',
                 overflow: 'visible',
-                white_space: 'normal',
+                white_space: 'pre-wrap',
                 word_wrap: 'break-word',
                 x: x,
                 y: y,
                 width: width,
-                height: height,
+                height: layer.type === 'text' ? this.template.height : height, // Prevent vertical clipping for text
                 border_width: borderWidth,
                 borderWidth: borderWidth,
                 border_color: layer.borderColor || '#000000',
                 borderColor: layer.borderColor || '#000000',
                 stroke_width: 0
-            };
+            });
         });
         
         // Inject Template-level border as a synthetic top layer
         if (this.template.border && this.template.border.width > 0) {
-            apiLayers['template-border-layer'] = {
+            apiLayers.push({
+                layer: 'template-border-layer',
                 type: 'rectangle',
                 x: 0,
                 y: 0,
@@ -1232,7 +1232,7 @@ class TemplateFlow {
                 border_color: this.template.border.color,
                 box_sizing: 'border-box',
                 z_index: 9999 // Ensure it's on top
-            };
+            });
         }
 
         try {
