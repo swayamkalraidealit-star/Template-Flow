@@ -1025,18 +1025,20 @@ class TemplateFlow {
                     const renderUrl = data.render_url;
                     document.getElementById('renderResult').innerHTML = `<img src="${renderUrl}" alt="Rendered Template">`;
 
-                    // Setup direct download click handler
+                    // Setup direct download via CORS proxy (avoids tainted canvas & CORS fetch block)
                     this.downloadBtn.onclick = async (e) => {
                         e.preventDefault();
                         this.updateStatus('Downloading...');
 
                         try {
-                            // On Vercel/Production, the direct fetch might fail due to CORS.
-                            // We try the download but provide a clear fallback if it fails.
-                            const response = await fetch(renderUrl, { mode: 'cors' });
-                            if (!response.ok) throw new Error('CORS issue');
+                            // Extract the path from the renderUrl (e.g., /render/uuid.jpg)
+                            const urlObj = new URL(renderUrl);
+                            const proxyUrl = `/api/render-image${urlObj.pathname}`;
+                            
+                            const res = await fetch(proxyUrl);
+                            if (!res.ok) throw new Error(`Proxy fetch failed: ${res.status}`);
 
-                            const blob = await response.blob();
+                            const blob = await res.blob();
                             const blobUrl = window.URL.createObjectURL(blob);
                             const link = document.createElement('a');
                             link.href = blobUrl;
@@ -1047,15 +1049,8 @@ class TemplateFlow {
                             window.URL.revokeObjectURL(blobUrl);
                             this.updateStatus('Success! Check your downloads.');
                         } catch (err) {
-                            console.log('Direct download blocked by CORS, opening in new tab.');
-                            // Fallback: If CORS blocks the fetch, we open the link in a new tab
-                            // The user can right-click > "Save Image As" or it might trigger auto-view.
-                            const link = document.createElement('a');
-                            link.href = renderUrl;
-                            link.target = '_blank';
-                            link.download = `${this.template.name || 'template'}.jpg`; // Might be ignored by browser for cross-origin
-                            link.click();
-                            this.updateStatus('Opening image... please save it manually.');
+                            console.error('Download failed:', err);
+                            this.updateStatus('Download failed. Try right-clicking the image to save it.');
                         }
                     };
 
