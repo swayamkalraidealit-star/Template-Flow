@@ -354,9 +354,10 @@ class TemplateFlow {
             borderWidth: 0,
             borderColor: '#000000'
         } : {
-            layer: id, // Strictly unique identifier for the API mapping
+            id, // Critical: must match what selectedLayerIds tracks
+            layer: `image-${this.template.layers.length + 1}`,
             type: 'image',
-            image_url: 'https://via.placeholder.com/200',
+            image_url: '', // Empty by default — user uploads via Supabase
             x: 100,
             y: 100,
             width: 200,
@@ -640,6 +641,7 @@ class TemplateFlow {
             } else if (layer.type === 'image') {
                 const img = document.createElement('img');
                 img.src = layer.image_url;
+                img.crossOrigin = 'anonymous'; // Important for Supabase/CORS
                 img.style.width = '100%';
                 img.style.height = '100%';
                 img.style.objectFit = 'cover';
@@ -1484,11 +1486,17 @@ class TemplateFlow {
                 .from('templates')
                 .getPublicUrl(fileName);
 
+            // Update state and refresh UI
             this.updateLayerProperty(layerId, 'image_url', publicUrl);
             this.updateStatus('Upload successful!');
 
+            // Ensure the input field in the property panel is in sync
             const input = document.getElementById('imageUrlInput');
-            if (input) input.value = publicUrl;
+            if (input) {
+                input.value = publicUrl;
+                // Trigger a property render to show the new URL in the UI correctly
+                this.renderProperties();
+            }
 
         } catch (error) {
             this.updateStatus(`Upload error: ${error.message}`);
