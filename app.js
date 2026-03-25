@@ -151,9 +151,26 @@ class TemplateFlow {
         // Marquee Selection on Canvas
         this.canvas.addEventListener('mousedown', (e) => {
             if (e.target === this.canvas || e.target.classList.contains('template-border')) {
+                if (!e.shiftKey && !e.ctrlKey && !e.metaKey) {
+                    if (this.selectedLayerIds.size > 0) {
+                        this.selectedLayerIds.clear();
+                        this.render();
+                    }
+                }
                 this.startMarquee(e);
             }
         });
+
+        if (this.workspace) {
+            this.workspace.addEventListener('mousedown', (e) => {
+                if (e.target === this.workspace) {
+                    if (this.selectedLayerIds.size > 0) {
+                        this.selectedLayerIds.clear();
+                        this.render();
+                    }
+                }
+            });
+        }
 
         // Mobile Events
         if (this.mobileMenuBtn) {
