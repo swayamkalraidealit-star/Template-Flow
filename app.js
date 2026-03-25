@@ -33,6 +33,9 @@ class TemplateFlow {
         // Start with an empty canvas as requested
         this.template.layers = [];
         this.render();
+        
+        // Initial mobile state
+        this.switchMobileTab('editor');
 
         // Try to fetch existing template on load
         this.fetchTemplates();
@@ -63,6 +66,14 @@ class TemplateFlow {
         this.renderClose = document.getElementById('renderClose');
         this.templatesClose = document.getElementById('templatesClose');
         this.templatesList = document.getElementById('templatesList');
+
+        // Mobile UI Elements
+        this.mobileMenuBtn = document.getElementById('mobileMenuBtn');
+        this.navActions = document.getElementById('navActions');
+        this.mobileTabs = document.querySelectorAll('.mobile-tab-item');
+        this.layerPanel = document.getElementById('layerPanel');
+        this.propertyPanel = document.getElementById('propertyPanel');
+        this.zoomValue = 0.5; // Default to 50% view as requested
     }
 
     bindEvents() {
@@ -83,6 +94,20 @@ class TemplateFlow {
         window.addEventListener('click', (e) => {
             if (e.target === this.renderModal) this.renderModal.style.display = 'none';
             if (e.target === this.templatesModal) this.templatesModal.style.display = 'none';
+
+            // Close mobile menu when clicking outside
+            if (this.navActions && this.navActions.classList.contains('mobile-open')) {
+                const isMenuBtn = this.mobileMenuBtn && this.mobileMenuBtn.contains(e.target);
+                const isMenu = this.navActions.contains(e.target);
+                if (!isMenuBtn && !isMenu) {
+                    this.navActions.classList.remove('mobile-open');
+                }
+            }
+
+            // Close custom selects
+            if (!e.target.closest('.custom-select')) {
+                document.querySelectorAll('.custom-options.open').forEach(el => el.classList.remove('open'));
+            }
         });
 
         // Global key events
@@ -129,10 +154,123 @@ class TemplateFlow {
                 this.startMarquee(e);
             }
         });
+
+        // Mobile Events
+        if (this.mobileMenuBtn) {
+            this.mobileMenuBtn.addEventListener('click', () => this.toggleMobileMenu());
+        }
+
+        this.mobileTabs.forEach(tab => {
+            tab.addEventListener('click', () => {
+                const tabName = tab.getAttribute('data-tab');
+                this.switchMobileTab(tabName);
+            });
+        });
+
+        // Zoom control is now handled by custom-select
     }
 
     calculateScale() {
-        return 1.0; // Strictly 1:1 scale as requested
+        // Mobile behavior: Smart auto-fit
+        if (window.innerWidth <= 768) {
+            const padding = 20;
+            const availableWidth = window.innerWidth - padding;
+            const scale = Math.min(1.0, availableWidth / 1200);
+            return Math.max(0.2, scale);
+        }
+
+        // Desktop behavior: Fixed 50% scale for the overview
+        return 0.5;
+    }
+
+    // --- Custom Select Logic ---
+    renderCustomSelect(layerId, property, options, currentValue) {
+        const id = `select-${layerId}-${property}`;
+        const currentLabel = options.find(o => o.value == currentValue)?.label || currentValue;
+        
+        let optionsHtml = options.map(o => `
+            <div class="custom-option ${o.value == currentValue ? 'selected' : ''}" 
+                 onclick="app.selectCustomOption('${layerId}', '${property}', '${o.value}', this)">
+                ${o.label}
+            </div>
+        `).join('');
+
+        return `
+            <div class="custom-select" id="${id}">
+                <div class="custom-select-trigger" onclick="app.toggleCustomSelect('${id}', event)">
+                    <span>${currentLabel}</span>
+                </div>
+                <div class="custom-options">
+                    ${optionsHtml}
+                </div>
+            </div>
+        `;
+    }
+
+    toggleCustomSelect(id, event) {
+        if (event) event.stopPropagation();
+        const el = document.getElementById(id);
+        const options = el.querySelector('.custom-options');
+        
+        // Close others
+        document.querySelectorAll('.custom-options.open').forEach(opened => {
+            if (opened !== options) opened.classList.remove('open');
+        });
+        
+        options.classList.toggle('open');
+    }
+
+    selectCustomOption(layerId, property, value, el) {
+        this.updateLayerProperty(layerId, property, value);
+        
+        // Close menu
+        const options = el.parentElement;
+        options.classList.remove('open');
+        
+        // Trigger re-render to update the trigger label and other things
+        this.render();
+    }
+
+
+
+    // --- Mobile Responsive Logic ---
+    toggleMobileMenu() {
+        this.navActions.classList.toggle('mobile-open');
+    }
+
+    switchMobileTab(tabName) {
+        // Update Tab Buttons
+        this.mobileTabs.forEach(tab => {
+            if (tab.getAttribute('data-tab') === tabName) {
+                tab.classList.add('active');
+            } else {
+                tab.classList.remove('active');
+            }
+        });
+
+        // Update Panels
+        // editor, layers, props
+        if (tabName === 'editor') {
+            this.workspace.classList.add('mobile-active');
+            this.layerPanel.classList.remove('mobile-active');
+            this.propertyPanel.classList.remove('mobile-active');
+        } else if (tabName === 'layers') {
+            this.workspace.classList.remove('mobile-active');
+            this.layerPanel.classList.add('mobile-active');
+            this.propertyPanel.classList.remove('mobile-active');
+        } else if (tabName === 'props') {
+            this.workspace.classList.remove('mobile-active');
+            this.layerPanel.classList.remove('mobile-active');
+            this.propertyPanel.classList.add('mobile-active');
+        }
+
+        // Close mobile menu if open
+        if (this.navActions) {
+            this.navActions.classList.remove('mobile-open');
+        }
+
+        // Force a render to update anything visual
+        this.render();
     }
 
     /**
@@ -688,44 +826,46 @@ class TemplateFlow {
                 <div class="input-row">
                     <div class="property-group">
                         <label>Weight</label>
-                        <select onchange="app.updateLayerProperty('${layer.id}', 'fontWeight', this.value)">
-                            <option value="300" ${layer.fontWeight == '300' ? 'selected' : ''}>Light</option>
-                            <option value="400" ${layer.fontWeight == '400' ? 'selected' : ''}>Regular</option>
-                            <option value="600" ${layer.fontWeight == '600' ? 'selected' : ''}>Semi-Bold</option>
-                            <option value="700" ${layer.fontWeight == '700' ? 'selected' : ''}>Bold</option>
-                        </select>
+                        ${this.renderCustomSelect(layer.id, 'fontWeight', [
+                            { value: '300', label: 'Light' },
+                            { value: '400', label: 'Regular' },
+                            { value: '600', label: 'Semi-Bold' },
+                            { value: '700', label: 'Bold' }
+                        ], layer.fontWeight || '400')}
                     </div>
                     <div class="property-group">
                         <label>Spacing</label>
                         <input type="number" step="0.5" value="${layer.letterSpacing || 0}" oninput="app.updateLayerProperty('${layer.id}', 'letterSpacing', this.value, true)" placeholder="Ltr">
                     </div>
+                </div>
+                <div class="input-row">
                     <div class="property-group">
-                        <label>Word Sp.</label>
+                        <label>Word Spacing</label>
                         <input type="number" step="0.5" value="${layer.wordSpacing || 0}" oninput="app.updateLayerProperty('${layer.id}', 'wordSpacing', this.value, true)" placeholder="Word">
                     </div>
                     <div class="property-group">
-                        <label>L. Height</label>
+                        <label>Line Height</label>
                         <input type="number" step="0.1" value="${layer.lineHeight || 1.1}" oninput="app.updateLayerProperty('${layer.id}', 'lineHeight', this.value, true)">
                     </div>
                 </div>
                 <div class="property-group">
                     <label>Font Family</label>
-                    <select onchange="app.updateLayerProperty('${layer.id}', 'fontFamily', this.value)">
-                        <option value="Inter" ${layer.fontFamily === 'Inter' ? 'selected' : ''}>Inter (Sans)</option>
-                        <option value="Montserrat" ${layer.fontFamily === 'Montserrat' ? 'selected' : ''}>Montserrat (Modern)</option>
-                        <option value="Roboto" ${layer.fontFamily === 'Roboto' ? 'selected' : ''}>Roboto (Clean)</option>
-                        <option value="Playfair Display" ${layer.fontFamily === 'Playfair Display' ? 'selected' : ''}>Playfair (Elegant)</option>
-                        <option value="Lora" ${layer.fontFamily === 'Lora' ? 'selected' : ''}>Lora (Classic Serif)</option>
-                        <option value="Courier New" ${layer.fontFamily === 'Courier New' ? 'selected' : ''}>Monospace</option>
-                    </select>
+                    ${this.renderCustomSelect(layer.id, 'fontFamily', [
+                        { value: 'Inter', label: 'Inter (Sans)' },
+                        { value: 'Montserrat', label: 'Montserrat (Modern)' },
+                        { value: 'Roboto', label: 'Roboto (Clean)' },
+                        { value: 'Playfair Display', label: 'Playfair (Elegant)' },
+                        { value: 'Lora', label: 'Lora (Classic Serif)' },
+                        { value: 'Courier New', label: 'Monospace' }
+                    ], layer.fontFamily || 'Inter')}
                 </div>
                 <div class="property-group">
                     <label>Alignment</label>
-                    <select onchange="app.updateLayerProperty('${layer.id}', 'align', this.value)">
-                        <option value="left" ${layer.align === 'left' ? 'selected' : ''}>Left</option>
-                        <option value="center" ${layer.align === 'center' ? 'selected' : ''}>Center</option>
-                        <option value="right" ${layer.align === 'right' ? 'selected' : ''}>Right</option>
-                    </select>
+                    ${this.renderCustomSelect(layer.id, 'align', [
+                        { value: 'left', label: 'Left' },
+                        { value: 'center', label: 'Center' },
+                        { value: 'right', label: 'Right' }
+                    ], layer.align || 'left')}
                 </div>
                 <div class="sidebar-section-title">Layer Border</div>
                 <div class="input-row">

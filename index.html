@@ -20,7 +20,7 @@
             <div class="logo">
                 <span class="gradient-text">TemplateFlow</span>
             </div>
-            <div class="header-actions">
+            <div class="header-actions" id="navActions">
                 <button id="showGallery" class="btn secondary">My Templates</button>
                 <button id="newTemplate" class="btn outline">New Template</button>
                 <div class="divider"></div>
@@ -29,6 +29,9 @@
                 <button id="renderImage" class="btn accent">Render Image</button>
                 <button id="deleteTemplate" class="btn danger" style="display: none;">Delete</button>
             </div>
+            <button id="mobileMenuBtn" class="mobile-only-btn" title="Toggle Menu">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
+            </button>
         </header>
 
         <main class="editor-container">
@@ -65,6 +68,22 @@
                 </div>
             </aside>
         </main>
+
+        <!-- Mobile Bottom Tabs -->
+        <nav class="mobile-tabs">
+            <button class="mobile-tab-item active" data-tab="editor">
+                <span class="tab-icon">🎨</span>
+                <span class="tab-label">Design</span>
+            </button>
+            <button class="mobile-tab-item" data-tab="layers">
+                <span class="tab-icon">🗂️</span>
+                <span class="tab-label">Layers</span>
+            </button>
+            <button class="mobile-tab-item" data-tab="props">
+                <span class="tab-icon">⚙️</span>
+                <span class="tab-label">Properties</span>
+            </button>
+        </nav>
 
         <!-- Footer / Status Bar -->
         <!-- Modal for Templates Gallery -->
