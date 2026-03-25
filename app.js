@@ -781,7 +781,7 @@ class TemplateFlow {
         let html = `
             <div class="property-group">
                 <label>Layer Name</label>
-                <input type="text" value="${layer.layer}" onkeyup="app.updateLayerProperty('${layer.id}', 'layer', this.value, true)">
+                <div style="padding: 0.6rem 0.8rem; background: #1f2937; border: 1px solid var(--border-color); border-radius: 8px; font-size: 0.85rem; color: var(--text-secondary);">${layer.layer}</div>
             </div>
             <div class="input-row">
                 <div class="property-group">
