@@ -449,6 +449,50 @@ class TemplateFlow {
         this.render();
     }
 
+    alignSelected(direction) {
+        if (this.selectedLayerIds.size < 1) return;
+        
+        const layers = Array.from(this.selectedLayerIds)
+            .map(id => this.template.layers.find(l => l.id === id))
+            .filter(Boolean);
+        
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        layers.forEach(l => {
+            minX = Math.min(minX, l.x);
+            minY = Math.min(minY, l.y);
+            maxX = Math.max(maxX, l.x + l.width);
+            maxY = Math.max(maxY, l.y + l.height);
+        });
+
+        const bboxWidth = maxX - minX;
+        const bboxHeight = maxY - minY;
+        const canvasWidth = this.template.width;
+        const canvasHeight = this.template.height;
+
+        let offsetX = 0;
+        let offsetY = 0;
+        const PADDING = 110; // Safe area padding around canvas boundaries
+
+        if (direction === 'left') offsetX = 0 - minX;
+        else if (direction === 'right') offsetX = (canvasWidth - bboxWidth) - minX;
+        else if (direction === 'center') offsetX = (canvasWidth / 2 - bboxWidth / 2) - minX;
+        else if (direction === 'top') offsetY = PADDING - minY;
+        else if (direction === 'bottom') offsetY = (canvasHeight - bboxHeight) - minY;
+        else if (direction === 'middle') offsetY = (canvasHeight / 2 - bboxHeight / 2) - minY;
+
+        layers.forEach(l => {
+            l.x += offsetX;
+            l.y += offsetY;
+            
+            // Re-round
+            l.x = Math.round(l.x);
+            l.y = Math.round(l.y);
+        });
+
+        this.render();
+        this.updateStatus(`Aligned selection to canvas ${direction}`);
+    }
+
     deleteSelectedLayers() {
         const idsToDelete = Array.from(this.selectedLayerIds);
         this.template.layers = this.template.layers.filter(l => !idsToDelete.includes(l.id));
@@ -583,11 +627,83 @@ class TemplateFlow {
         this.template.layers.forEach(layer => {
             const li = document.createElement('li');
             li.className = `layer-item ${this.selectedLayerIds.has(layer.id) ? 'active' : ''}`;
+            li.draggable = true;
+            li.dataset.id = layer.id;
+
             li.innerHTML = `
-                <span class="icon">${layer.type === 'text' ? 'T' : '🖼️'}</span>
+                <span class="icon" style="cursor: grab;">${layer.type === 'text' ? 'T' : '🖼️'}</span>
                 <span class="name">${layer.layer}</span>
                 <button class="delete-btn" data-id="${layer.id}">×</button>
             `;
+
+            // Drag and Drop Events
+            li.addEventListener('dragstart', (e) => {
+                e.dataTransfer.setData('text/plain', layer.id);
+                e.dataTransfer.effectAllowed = 'move';
+                // Delay opacity change so the browser creates a solid 100% opaque drag ghost!
+                setTimeout(() => li.style.opacity = '0.3', 0);
+            });
+
+            li.addEventListener('dragend', () => {
+                li.style.opacity = '1';
+                document.querySelectorAll('.layer-item').forEach(el => {
+                    el.style.boxShadow = 'none';
+                });
+            });
+
+            li.addEventListener('dragover', (e) => {
+                e.preventDefault(); // Necessary to allow dropping
+                e.dataTransfer.dropEffect = 'move';
+                
+                document.querySelectorAll('.layer-item').forEach(el => {
+                    el.style.boxShadow = 'none';
+                });
+
+                const rect = li.getBoundingClientRect();
+                const midY = rect.top + rect.height / 2;
+                if (e.clientY < midY) {
+                    li.style.boxShadow = '0 -2px 0 0 var(--primary-color)';
+                } else {
+                    li.style.boxShadow = '0 2px 0 0 var(--primary-color)';
+                }
+            });
+
+            li.addEventListener('dragleave', () => {
+                li.style.boxShadow = 'none';
+            });
+
+            li.addEventListener('drop', (e) => {
+                e.preventDefault();
+                li.style.boxShadow = 'none';
+
+                const draggedId = e.dataTransfer.getData('text/plain');
+                if (draggedId === layer.id) return;
+
+                const draggedIndex = this.template.layers.findIndex(l => l.id === draggedId);
+                const dropIndex = this.template.layers.findIndex(l => l.id === layer.id);
+                if (draggedIndex === -1 || dropIndex === -1) return;
+
+                const rect = li.getBoundingClientRect();
+                const midY = rect.top + rect.height / 2;
+                const insertAfter = e.clientY >= midY;
+
+                // Remove dragged item from old position
+                const [draggedItem] = this.template.layers.splice(draggedIndex, 1);
+
+                // Recalculate drop index after removal
+                let newDropIndex = this.template.layers.findIndex(l => l.id === layer.id);
+
+                // Insert at new position
+                if (insertAfter) {
+                    this.template.layers.splice(newDropIndex + 1, 0, draggedItem);
+                } else {
+                    this.template.layers.splice(newDropIndex, 0, draggedItem);
+                }
+
+                this.render(); // Re-render everything with new order
+                this.updateStatus('Reordered layers');
+            });
+
             li.addEventListener('click', (e) => {
                 if (e.target.classList.contains('delete-btn')) {
                     this.deleteLayer(layer.id);
@@ -595,6 +711,7 @@ class TemplateFlow {
                     this.selectLayer(layer.id, e.shiftKey || e.ctrlKey || e.metaKey);
                 }
             });
+
             this.layerList.appendChild(li);
         });
     }
@@ -689,6 +806,34 @@ class TemplateFlow {
 
             this.canvas.appendChild(el);
         });
+
+        // Draw smart guides if there are any active
+        if (this.activeSnapLines && this.activeSnapLines.length > 0) {
+            this.activeSnapLines.forEach(line => {
+                const lineEl = document.createElement('div');
+                lineEl.className = 'smart-guide';
+                lineEl.style.position = 'absolute';
+                lineEl.style.background = line.color;
+                lineEl.style.zIndex = '999';
+                lineEl.style.pointerEvents = 'none';
+
+                if (line.x1 === line.x2) {
+                    // Vertical line
+                    lineEl.style.left = `${line.x1 * this.scale}px`;
+                    lineEl.style.top = `${Math.min(line.y1, line.y2) * this.scale}px`;
+                    lineEl.style.width = '1px';
+                    lineEl.style.height = `${Math.abs(line.y2 - line.y1) * this.scale}px`;
+                } else {
+                    // Horizontal line
+                    lineEl.style.top = `${line.y1 * this.scale}px`;
+                    lineEl.style.left = `${Math.min(line.x1, line.x2) * this.scale}px`;
+                    lineEl.style.height = '1px';
+                    lineEl.style.width = `${Math.abs(line.x2 - line.x1) * this.scale}px`;
+                }
+
+                this.canvas.appendChild(lineEl);
+            });
+        }
     }
 
     startDragging(e, layer, el) {
@@ -704,13 +849,98 @@ class TemplateFlow {
             return l ? { layer: l, startX: l.x, startY: l.y } : null;
         }).filter(Boolean);
 
+        const mainInfo = selectedLayersInfo.find(info => info.layer.id === layer.id);
+
         const onMouseMove = (moveEvent) => {
             const dx = (moveEvent.clientX - startX) / this.scale;
             const dy = (moveEvent.clientY - startY) / this.scale;
 
             selectedLayersInfo.forEach(info => {
-                info.layer.x = Math.round(info.startX + dx);
-                info.layer.y = Math.round(info.startY + dy);
+                info.layer.x = info.startX + dx;
+                info.layer.y = info.startY + dy;
+            });
+
+            this.activeSnapLines = [];
+
+            if (!moveEvent.shiftKey && mainInfo) {
+                const snapThreshold = 8 / this.scale;
+                let snapDx = 0;
+                let snapDy = 0;
+                let bestDiffX = snapThreshold;
+                let bestDiffY = snapThreshold;
+                let snapXLine = null;
+                let snapYLine = null;
+
+                const checkSnapX = (currentX, targetX) => {
+                    const diff = targetX - currentX;
+                    if (Math.abs(diff) < Math.abs(bestDiffX)) {
+                        bestDiffX = diff;
+                        snapDx = diff;
+                        snapXLine = targetX;
+                    }
+                };
+
+                const checkSnapY = (currentY, targetY) => {
+                    const diff = targetY - currentY;
+                    if (Math.abs(diff) < Math.abs(bestDiffY)) {
+                        bestDiffY = diff;
+                        snapDy = diff;
+                        snapYLine = targetY;
+                    }
+                };
+
+                const currLeft = mainInfo.layer.x;
+                const currCenter = mainInfo.layer.x + mainInfo.layer.width / 2;
+                const currRight = mainInfo.layer.x + mainInfo.layer.width;
+
+                const currTop = mainInfo.layer.y;
+                const currMiddle = mainInfo.layer.y + mainInfo.layer.height / 2;
+                const currBottom = mainInfo.layer.y + mainInfo.layer.height;
+
+                checkSnapX(currCenter, this.template.width / 2);
+                checkSnapX(currLeft, 0);
+                checkSnapX(currRight, this.template.width);
+
+                checkSnapY(currMiddle, this.template.height / 2);
+                checkSnapY(currTop, 0);
+                checkSnapY(currBottom, this.template.height);
+
+                const targetLayers = this.template.layers.filter(l => !this.selectedLayerIds.has(l.id));
+                targetLayers.forEach(target => {
+                    const tLeft = target.x;
+                    const tCenter = target.x + target.width / 2;
+                    const tRight = target.x + target.width;
+
+                    const tTop = target.y;
+                    const tMiddle = target.y + target.height / 2;
+                    const tBottom = target.y + target.height;
+
+                    checkSnapX(currLeft, tLeft);
+                    checkSnapX(currLeft, tRight);
+                    checkSnapX(currRight, tLeft);
+                    checkSnapX(currRight, tRight);
+                    checkSnapX(currCenter, tCenter);
+
+                    checkSnapY(currTop, tTop);
+                    checkSnapY(currTop, tBottom);
+                    checkSnapY(currBottom, tTop);
+                    checkSnapY(currBottom, tBottom);
+                    checkSnapY(currMiddle, tMiddle);
+                });
+
+                if (snapXLine !== null) {
+                    selectedLayersInfo.forEach(info => { info.layer.x += snapDx; });
+                    this.activeSnapLines.push({ x1: snapXLine, y1: 0, x2: snapXLine, y2: this.template.height, color: '#f0f' });
+                }
+                if (snapYLine !== null) {
+                    selectedLayersInfo.forEach(info => { info.layer.y += snapDy; });
+                    this.activeSnapLines.push({ x1: 0, y1: snapYLine, x2: this.template.width, y2: snapYLine, color: '#f0f' });
+                }
+            }
+
+            selectedLayersInfo.forEach(info => {
+                info.layer.x = Math.round(info.layer.x);
+                info.layer.y = Math.round(info.layer.y);
             });
 
             // Re-render visual canvas
@@ -718,6 +948,7 @@ class TemplateFlow {
         };
 
         const onMouseUp = () => {
+            this.activeSnapLines = [];
             document.removeEventListener('mousemove', onMouseMove);
             document.removeEventListener('mouseup', onMouseUp);
             // Final render to sync everything
@@ -757,8 +988,20 @@ class TemplateFlow {
             return;
         }
 
+        const alignmentHtml = `
+            <div class="sidebar-section-title">Align to Canvas</div>
+            <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.5rem; margin-bottom: 2rem;">
+                <button class="btn outline small-full" onclick="app.alignSelected('left')" title="Align Left" style="font-size: 0.75rem;">Left</button>
+                <button class="btn outline small-full" onclick="app.alignSelected('center')" title="Align Center" style="font-size: 0.75rem;">Center</button>
+                <button class="btn outline small-full" onclick="app.alignSelected('right')" title="Align Right" style="font-size: 0.75rem;">Right</button>
+                <button class="btn outline small-full" onclick="app.alignSelected('top')" title="Align Top" style="font-size: 0.75rem;">Top</button>
+                <button class="btn outline small-full" onclick="app.alignSelected('middle')" title="Align Middle" style="font-size: 0.75rem;">Middle</button>
+                <button class="btn outline small-full" onclick="app.alignSelected('bottom')" title="Align Bottom" style="font-size: 0.75rem;">Bottom</button>
+            </div>
+        `;
+
         if (this.selectedLayerIds.size > 1) {
-            this.propertiesContent.innerHTML = `
+            this.propertiesContent.innerHTML = alignmentHtml + `
                 <div class="empty-state">
                     <p>${this.selectedLayerIds.size} layers selected</p>
                     <p style="font-size: 0.8rem; margin-top: 1rem;">Press <b>Ctrl+D</b> to duplicate all</p>
@@ -768,34 +1011,9 @@ class TemplateFlow {
             return;
         }
 
-        if (this.selectedLayerIds.size === 0) {
-            html = `
-                <div class="sidebar-section-title">Template Settings</div>
-                <div class="input-row">
-                    <div class="property-group">
-                        <label>Width (px)</label>
-                        <input type="number" value="${this.template.width}" onchange="app.updateTemplateProperty('width', this.value)">
-                    </div>
-                    <div class="property-group">
-                        <label>Height (px)</label>
-                        <input type="number" value="${this.template.height}" onchange="app.updateTemplateProperty('height', this.value)">
-                    </div>
-                </div>
-                <div class="property-group" style="margin-top: 1rem;">
-                    <label>Background Color</label>
-                    <input type="color" value="${this.template.background || '#ffffff'}" oninput="app.updateTemplateProperty('background', this.value)">
-                </div>
-                <p style="font-size: 11px; margin-top: 1rem; color: var(--text-secondary); line-height: 1.4;">
-                    Adjust the template resolution to match your target output (e.g., 1080x1080). Coordinates are absolute pixels.
-                </p>
-            `;
-            this.propertiesContent.innerHTML = html;
-            return;
-        }
-
         const selectedId = Array.from(this.selectedLayerIds)[0];
         const layer = this.template.layers.find(l => l.id === selectedId);
-        let html = `
+        let html = alignmentHtml + `
             <div class="property-group">
                 <label>Layer Name</label>
                 <div style="padding: 0.6rem 0.8rem; background: #1f2937; border: 1px solid var(--border-color); border-radius: 8px; font-size: 0.85rem; color: var(--text-secondary);">${layer.layer}</div>
