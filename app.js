@@ -815,15 +815,20 @@ class TemplateFlow {
                 el.style.border = 'none';
             }
 
-            // Resize handle
-            const handle = document.createElement('div');
-            handle.className = 'resize-handle';
-            el.appendChild(handle);
+            // Resize handles (all sides + corners)
+            const resizeDirections = ['n', 'ne', 'e', 'se', 's', 'sw', 'w', 'nw'];
+            resizeDirections.forEach(direction => {
+                const handle = document.createElement('div');
+                handle.className = `resize-handle resize-${direction}`;
+                handle.dataset.direction = direction;
+                el.appendChild(handle);
+            });
 
             el.addEventListener('mousedown', (e) => {
                 this.selectLayer(layer.id, e.shiftKey || e.ctrlKey || e.metaKey);
-                if (e.target.classList.contains('resize-handle')) {
-                    this.startResizing(e, layer, el);
+                const resizeHandle = e.target.closest('.resize-handle');
+                if (resizeHandle) {
+                    this.startResizing(e, layer, resizeHandle.dataset.direction || 'se');
                 } else {
                     this.startDragging(e, layer, el);
                 }
@@ -984,23 +989,69 @@ class TemplateFlow {
         document.addEventListener('mouseup', onMouseUp);
     }
 
-    startResizing(e, layer, el) {
+    startResizing(e, layer, direction = 'se') {
+        e.preventDefault();
         e.stopPropagation();
+
         const startX = e.clientX;
         const startY = e.clientY;
+        const startLayerX = layer.x;
+        const startLayerY = layer.y;
         const startWidth = layer.width;
         const startHeight = layer.height;
+        const minSize = 10;
 
         const onMouseMove = (moveEvent) => {
             const dx = (moveEvent.clientX - startX) / this.scale;
             const dy = (moveEvent.clientY - startY) / this.scale;
-            this.updateLayerProperty(layer.id, 'width', Math.max(10, Math.round(startWidth + dx)));
-            this.updateLayerProperty(layer.id, 'height', Math.max(10, Math.round(startHeight + dy)));
+
+            let newX = startLayerX;
+            let newY = startLayerY;
+            let newWidth = startWidth;
+            let newHeight = startHeight;
+
+            if (direction.includes('e')) {
+                newWidth = startWidth + dx;
+            }
+            if (direction.includes('s')) {
+                newHeight = startHeight + dy;
+            }
+            if (direction.includes('w')) {
+                newWidth = startWidth - dx;
+                newX = startLayerX + dx;
+            }
+            if (direction.includes('n')) {
+                newHeight = startHeight - dy;
+                newY = startLayerY + dy;
+            }
+
+            if (newWidth < minSize) {
+                if (direction.includes('w')) {
+                    newX = startLayerX + (startWidth - minSize);
+                }
+                newWidth = minSize;
+            }
+
+            if (newHeight < minSize) {
+                if (direction.includes('n')) {
+                    newY = startLayerY + (startHeight - minSize);
+                }
+                newHeight = minSize;
+            }
+
+            layer.x = Math.round(newX);
+            layer.y = Math.round(newY);
+            layer.width = Math.round(newWidth);
+            layer.height = Math.round(newHeight);
+
+            this.renderCanvas();
+            this.renderProperties();
         };
 
         const onMouseUp = () => {
             document.removeEventListener('mousemove', onMouseMove);
             document.removeEventListener('mouseup', onMouseUp);
+            this.render();
         };
 
         document.addEventListener('mousemove', onMouseMove);

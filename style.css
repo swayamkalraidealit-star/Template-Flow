@@ -185,13 +185,62 @@ body {
     width: 12px;
     height: 12px;
     background: var(--primary-color);
-    bottom: -6px;
-    right: -6px;
-    cursor: nwse-resize;
     display: none;
     border-radius: 50%;
     z-index: 110;
     border: 2px solid white;
+}
+
+.resize-handle.resize-n {
+    top: -6px;
+    left: 50%;
+    transform: translateX(-50%);
+    cursor: ns-resize;
+}
+
+.resize-handle.resize-ne {
+    top: -6px;
+    right: -6px;
+    cursor: nesw-resize;
+}
+
+.resize-handle.resize-e {
+    top: 50%;
+    right: -6px;
+    transform: translateY(-50%);
+    cursor: ew-resize;
+}
+
+.resize-handle.resize-se {
+    bottom: -6px;
+    right: -6px;
+    cursor: nwse-resize;
+}
+
+.resize-handle.resize-s {
+    bottom: -6px;
+    left: 50%;
+    transform: translateX(-50%);
+    cursor: ns-resize;
+}
+
+.resize-handle.resize-sw {
+    bottom: -6px;
+    left: -6px;
+    cursor: nesw-resize;
+}
+
+.resize-handle.resize-w {
+    top: 50%;
+    left: -6px;
+    transform: translateY(-50%);
+    cursor: ew-resize;
+}
+
+.resize-handle.resize-nw {
+    top: -6px;
+    left: -6px;
+    cursor: nwse-resize;
 }
 
 .layer-element.selected .resize-handle {
