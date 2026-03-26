@@ -89,11 +89,11 @@ class TemplateFlow {
                 this.deleteRemoteTemplate(this.templateId, this.template.name);
             }
         });
-        this.renderClose.addEventListener('click', () => this.renderModal.style.display = 'none');
-        this.templatesClose.addEventListener('click', () => this.templatesModal.style.display = 'none');
+        this.renderClose.addEventListener('click', () => this.closeModal(this.renderModal));
+        this.templatesClose.addEventListener('click', () => this.closeModal(this.templatesModal));
         window.addEventListener('click', (e) => {
-            if (e.target === this.renderModal) this.renderModal.style.display = 'none';
-            if (e.target === this.templatesModal) this.templatesModal.style.display = 'none';
+            if (e.target === this.renderModal) this.closeModal(this.renderModal);
+            if (e.target === this.templatesModal) this.closeModal(this.templatesModal);
 
             // Close mobile menu when clicking outside
             if (this.navActions && this.navActions.classList.contains('mobile-open')) {
@@ -185,6 +185,24 @@ class TemplateFlow {
         });
 
         // Zoom control is now handled by custom-select
+    }
+
+    openModal(modalEl) {
+        if (!modalEl) return;
+        modalEl.style.display = 'block';
+        document.body.classList.add('modal-open');
+    }
+
+    closeModal(modalEl) {
+        if (!modalEl) return;
+        modalEl.style.display = 'none';
+        this.syncModalState();
+    }
+
+    syncModalState() {
+        const hasOpenModal = [this.renderModal, this.templatesModal]
+            .some(modal => modal && modal.style.display === 'block');
+        document.body.classList.toggle('modal-open', hasOpenModal);
     }
 
     calculateScale() {
@@ -374,9 +392,35 @@ class TemplateFlow {
 
     addLayer(type) {
         const id = `layer-${Date.now()}`;
-        const layerWidth = type === 'text' ? 400 : 200;
-        const layerHeight = type === 'text' ? 100 : 200;
-        const { x, y } = this.getCenteredLayerPosition(layerWidth, layerHeight);
+        let layerWidth = type === 'text' ? 400 : 200;
+        let layerHeight = type === 'text' ? 100 : 200;
+        let x;
+        let y;
+        let isTextOnSelectedImage = false;
+
+        if (type === 'text' && this.selectedLayerIds.size === 1) {
+            const selectedLayerId = Array.from(this.selectedLayerIds)[0];
+            const selectedLayer = this.template.layers.find(l => l.id === selectedLayerId);
+            if (selectedLayer && selectedLayer.type === 'image') {
+                layerWidth = Math.max(120, Math.min(400, selectedLayer.width - 20));
+                layerHeight = Math.max(40, Math.min(120, selectedLayer.height - 20));
+                x = selectedLayer.x + ((selectedLayer.width - layerWidth) / 2);
+                y = selectedLayer.y + ((selectedLayer.height - layerHeight) / 2);
+                isTextOnSelectedImage = true;
+            }
+        }
+
+        if (x === undefined || y === undefined) {
+            const centered = this.getCenteredLayerPosition(layerWidth, layerHeight);
+            x = centered.x;
+            y = centered.y;
+        }
+
+        const maxX = Math.max(0, this.template.width - layerWidth);
+        const maxY = Math.max(0, this.template.height - layerHeight);
+        x = Math.max(0, Math.min(maxX, Math.round(x)));
+        y = Math.max(0, Math.min(maxY, Math.round(y)));
+
         const newLayer = type === 'text' ? {
             id,
             layer: `text-${this.template.layers.length + 1}`,
@@ -391,8 +435,8 @@ class TemplateFlow {
             letterSpacing: 0,
             wordSpacing: 0,
             lineHeight: 1.1,
-            align: 'left',
-            color: '#1a1a1a',
+            align: isTextOnSelectedImage ? 'center' : 'left',
+            color: isTextOnSelectedImage ? '#ffffff' : '#1a1a1a',
             borderWidth: 0,
             borderColor: '#000000'
         } : {
@@ -400,6 +444,7 @@ class TemplateFlow {
             layer: `image-${this.template.layers.length + 1}`,
             type: 'image',
             image_url: '', // Empty by default — user uploads via Supabase
+            imageFit: 'fill',
             x,
             y,
             width: layerWidth,
@@ -412,7 +457,11 @@ class TemplateFlow {
         this.selectedLayerIds.clear();
         this.selectedLayerIds.add(id);
         this.render();
-        this.updateStatus(`Added ${type} layer`);
+        if (isTextOnSelectedImage) {
+            this.updateStatus('Added text layer on selected image');
+        } else {
+            this.updateStatus(`Added ${type} layer`);
+        }
     }
 
     selectLayer(id, isMulti = false) {
@@ -765,7 +814,7 @@ class TemplateFlow {
             this.canvas.appendChild(borderEl);
         }
 
-        this.template.layers.forEach(layer => {
+        this.template.layers.forEach((layer, index) => {
             const isSelected = this.selectedLayerIds.has(layer.id);
             const el = document.createElement('div');
             el.className = `layer-element ${isSelected ? 'selected' : ''}`;
@@ -774,7 +823,8 @@ class TemplateFlow {
             el.style.top = `${layer.y * this.scale}px`;
             el.style.width = `${layer.width * this.scale}px`;
             el.style.height = `${layer.height * this.scale}px`;
-            el.style.zIndex = isSelected ? '100' : '10';
+            // Use actual layer order for true WYSIWYG with rendered/download output.
+            el.style.zIndex = `${10 + index}`;
             el.style.boxSizing = 'border-box';
             el.style.padding = '0';
             el.style.margin = '0';
@@ -803,7 +853,7 @@ class TemplateFlow {
                 img.crossOrigin = 'anonymous'; // Important for Supabase/CORS
                 img.style.width = '100%';
                 img.style.height = '100%';
-                img.style.objectFit = 'cover';
+                img.style.objectFit = layer.imageFit || 'fill';
                 el.appendChild(img);
             }
 
@@ -880,10 +930,60 @@ class TemplateFlow {
         }).filter(Boolean);
 
         const mainInfo = selectedLayersInfo.find(info => info.layer.id === layer.id);
+        const canvasWidth = this.parseNumericValue(this.template.width, 1);
+        const canvasHeight = this.parseNumericValue(this.template.height, 1);
+
+        const selectionBoundsAtStart = selectedLayersInfo.reduce((acc, info) => {
+            const left = info.startX;
+            const top = info.startY;
+            const right = info.startX + info.layer.width;
+            const bottom = info.startY + info.layer.height;
+            acc.minX = Math.min(acc.minX, left);
+            acc.minY = Math.min(acc.minY, top);
+            acc.maxX = Math.max(acc.maxX, right);
+            acc.maxY = Math.max(acc.maxY, bottom);
+            return acc;
+        }, { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity });
+
+        const constrainSelectionWithinCanvas = () => {
+            let minX = Infinity;
+            let minY = Infinity;
+            let maxX = -Infinity;
+            let maxY = -Infinity;
+
+            selectedLayersInfo.forEach(info => {
+                minX = Math.min(minX, info.layer.x);
+                minY = Math.min(minY, info.layer.y);
+                maxX = Math.max(maxX, info.layer.x + info.layer.width);
+                maxY = Math.max(maxY, info.layer.y + info.layer.height);
+            });
+
+            let adjustX = 0;
+            let adjustY = 0;
+
+            if (minX < 0) adjustX = -minX;
+            else if (maxX > canvasWidth) adjustX = canvasWidth - maxX;
+
+            if (minY < 0) adjustY = -minY;
+            else if (maxY > canvasHeight) adjustY = canvasHeight - maxY;
+
+            if (adjustX !== 0 || adjustY !== 0) {
+                selectedLayersInfo.forEach(info => {
+                    info.layer.x += adjustX;
+                    info.layer.y += adjustY;
+                });
+            }
+        };
 
         const onMouseMove = (moveEvent) => {
-            const dx = (moveEvent.clientX - startX) / this.scale;
-            const dy = (moveEvent.clientY - startY) / this.scale;
+            const rawDx = (moveEvent.clientX - startX) / this.scale;
+            const rawDy = (moveEvent.clientY - startY) / this.scale;
+            const minDx = -selectionBoundsAtStart.minX;
+            const maxDx = canvasWidth - selectionBoundsAtStart.maxX;
+            const minDy = -selectionBoundsAtStart.minY;
+            const maxDy = canvasHeight - selectionBoundsAtStart.maxY;
+            const dx = Math.min(maxDx, Math.max(minDx, rawDx));
+            const dy = Math.min(maxDy, Math.max(minDy, rawDy));
 
             selectedLayersInfo.forEach(info => {
                 info.layer.x = info.startX + dx;
@@ -968,6 +1068,8 @@ class TemplateFlow {
                 }
             }
 
+            constrainSelectionWithinCanvas();
+
             selectedLayersInfo.forEach(info => {
                 info.layer.x = Math.round(info.layer.x);
                 info.layer.y = Math.round(info.layer.y);
@@ -995,49 +1097,56 @@ class TemplateFlow {
 
         const startX = e.clientX;
         const startY = e.clientY;
-        const startLayerX = layer.x;
-        const startLayerY = layer.y;
-        const startWidth = layer.width;
-        const startHeight = layer.height;
+        const startLayerX = this.parseNumericValue(layer.x, 0);
+        const startLayerY = this.parseNumericValue(layer.y, 0);
+        const startWidth = this.parseNumericValue(layer.width, 10);
+        const startHeight = this.parseNumericValue(layer.height, 10);
+        const startRight = startLayerX + startWidth;
+        const startBottom = startLayerY + startHeight;
         const minSize = 10;
+        const canvasWidth = this.parseNumericValue(this.template.width, 1);
+        const canvasHeight = this.parseNumericValue(this.template.height, 1);
 
         const onMouseMove = (moveEvent) => {
             const dx = (moveEvent.clientX - startX) / this.scale;
             const dy = (moveEvent.clientY - startY) / this.scale;
 
-            let newX = startLayerX;
-            let newY = startLayerY;
-            let newWidth = startWidth;
-            let newHeight = startHeight;
+            let newLeft = startLayerX;
+            let newRight = startRight;
+            let newTop = startLayerY;
+            let newBottom = startBottom;
 
-            if (direction.includes('e')) {
-                newWidth = startWidth + dx;
-            }
-            if (direction.includes('s')) {
-                newHeight = startHeight + dy;
-            }
             if (direction.includes('w')) {
-                newWidth = startWidth - dx;
-                newX = startLayerX + dx;
+                const candidateLeft = startLayerX + dx;
+                const maxLeft = startRight - minSize;
+                newLeft = Math.max(0, Math.min(maxLeft, candidateLeft));
+            }
+            if (direction.includes('e')) {
+                const candidateRight = startRight + dx;
+                const minRight = startLayerX + minSize;
+                newRight = Math.min(canvasWidth, Math.max(minRight, candidateRight));
             }
             if (direction.includes('n')) {
-                newHeight = startHeight - dy;
-                newY = startLayerY + dy;
+                const candidateTop = startLayerY + dy;
+                const maxTop = startBottom - minSize;
+                newTop = Math.max(0, Math.min(maxTop, candidateTop));
+            }
+            if (direction.includes('s')) {
+                const candidateBottom = startBottom + dy;
+                const minBottom = startLayerY + minSize;
+                newBottom = Math.min(canvasHeight, Math.max(minBottom, candidateBottom));
             }
 
-            if (newWidth < minSize) {
-                if (direction.includes('w')) {
-                    newX = startLayerX + (startWidth - minSize);
-                }
-                newWidth = minSize;
-            }
+            let newX = newLeft;
+            let newY = newTop;
+            let newWidth = newRight - newLeft;
+            let newHeight = newBottom - newTop;
 
-            if (newHeight < minSize) {
-                if (direction.includes('n')) {
-                    newY = startLayerY + (startHeight - minSize);
-                }
-                newHeight = minSize;
-            }
+            // Final safety clamp to ensure layer always stays fully inside canvas.
+            newX = Math.max(0, Math.min(newX, canvasWidth - minSize));
+            newY = Math.max(0, Math.min(newY, canvasHeight - minSize));
+            newWidth = Math.max(minSize, Math.min(newWidth, canvasWidth - newX));
+            newHeight = Math.max(minSize, Math.min(newHeight, canvasHeight - newY));
 
             layer.x = Math.round(newX);
             layer.y = Math.round(newY);
@@ -1200,6 +1309,14 @@ class TemplateFlow {
                     <p style="font-size: 10px; margin-top: 5px; color: var(--text-secondary);">Or upload to Supabase:</p>
                     <input type="file" id="imageFileInput" accept="image/*" onchange="app.uploadToSupabase('${layer.id}', this.files[0])">
                 </div>
+                <div class="property-group">
+                    <label>Image Fit</label>
+                    ${this.renderCustomSelect(layer.id, 'imageFit', [
+                        { value: 'fill', label: 'Stretch (No Crop)' },
+                        { value: 'contain', label: 'Contain (No Crop)' },
+                        { value: 'cover', label: 'Cover (Crop)' }
+                    ], layer.imageFit || 'fill')}
+                </div>
                 <div class="sidebar-section-title">Image Border</div>
                 <div class="input-row">
                     <div class="property-group">
@@ -1283,9 +1400,10 @@ class TemplateFlow {
         this.updateStatus('Saving template to Templated.io...');
 
         // Normalize layers before saving
-        const apiLayers = this.template.layers.map(({ id, ...rest }) => {
+        const apiLayers = this.template.layers.map(({ id, ...rest }, index) => {
             const fontSize = this.parseFontSize(rest.fontSize);
             const lineHeight = rest.lineHeight || 1.2;
+            const imageFit = rest.imageFit || rest.object_fit || rest.objectFit || rest.fit || 'fill';
             
             return {
                 ...rest,
@@ -1311,7 +1429,11 @@ class TemplateFlow {
                 font_family: rest.fontFamily || 'Inter',
                 color: rest.color || '#1a1a1a',
                 borderColor: rest.borderColor || '#000000',
-                border_color: rest.borderColor || '#000000'
+                border_color: rest.borderColor || '#000000',
+                object_fit: imageFit,
+                objectFit: imageFit,
+                fit: imageFit,
+                z_index: index + 1
             };
         });
 
@@ -1406,7 +1528,7 @@ class TemplateFlow {
     }
 
     async showTemplatesGallery() {
-        this.templatesModal.style.display = 'block';
+        this.openModal(this.templatesModal);
         this.templatesList.innerHTML = '<div class="loader-container"><div class="loader"></div><p>Fetching your designs...</p></div>';
 
         const templates = await this.fetchTemplates();
@@ -1551,13 +1673,19 @@ class TemplateFlow {
         if (tpl.layers) {
             // Templated API returns layers as objects if it was saved via API.
             // If layers is an array, we map it. If it's an object (v1/template response structure), we handle it.
-            const layers = Array.isArray(tpl.layers) ? tpl.layers : Object.values(tpl.layers || {});
+            const rawLayers = Array.isArray(tpl.layers) ? tpl.layers : Object.values(tpl.layers || {});
+            const layers = [...rawLayers].sort((a, b) => {
+                const za = Number(a?.z_index ?? a?.zIndex ?? 0);
+                const zb = Number(b?.z_index ?? b?.zIndex ?? 0);
+                return za - zb;
+            });
 
             this.template.layers = layers.map((l, i) => {
                 // Handle both align and text_align properties from API
                 const align = l.align || l.text_align || 'left';
                 const fontFamily = l.fontFamily || l.font_family || 'Inter';
                 const fontWeight = l.fontWeight || l.font_weight || '400';
+                const imageFit = l.imageFit || l.object_fit || l.objectFit || l.fit || 'fill';
                 
                 return {
                     ...l,
@@ -1575,6 +1703,7 @@ class TemplateFlow {
                     borderWidth: this.parseNumericValue(l.borderWidth || l.border_width, 0),
                     align: align,
                     fontFamily: fontFamily,
+                    imageFit: imageFit,
                     color: l.color || '#1a1a1a',
                     borderColor: l.borderColor || l.border_color || '#000000',
                     type: l.type || (l.text ? 'text' : 'image')
@@ -1585,7 +1714,7 @@ class TemplateFlow {
         }
 
         this.selectedLayerIds.clear();
-        this.templatesModal.style.display = 'none';
+        this.closeModal(this.templatesModal);
         this.render();
         this.updateStatus(`Loaded template: ${tpl.name}`);
     }
@@ -1604,11 +1733,11 @@ class TemplateFlow {
 
         this.updateStatus('Generating render on Templated.io...');
         if (!isBackground) {
-            this.renderModal.style.display = 'block';
+            this.openModal(this.renderModal);
             document.getElementById('renderResult').innerHTML = '<div class="loader-container"><div class="loader"></div><p>Rendering Output...</p></div>';
         }
 
-        const apiLayers = []; // SWITCH TO ARRAY TO GUARANTEE ORDER AND PREVENT COLLISIONS
+        const apiLayers = []; // Keep exact layer order from canvas for WYSIWYG parity.
         this.template.layers.forEach((layer, index) => {
             // Parse all values to ensure they're valid numbers
             const fontSize = this.parseFontSize(layer.fontSize);
@@ -1620,6 +1749,7 @@ class TemplateFlow {
             const height = this.parseNumericValue(layer.height, 100);
             const borderWidth = this.parseNumericValue(layer.borderWidth, 0);
             const lineHeight = layer.lineHeight || 1.2;
+            const imageFit = layer.imageFit || layer.object_fit || layer.objectFit || layer.fit || 'fill';
 
             apiLayers.push({
                 layer: layer.id, // Use unique ID for mapping
@@ -1662,12 +1792,16 @@ class TemplateFlow {
                 x: x,
                 y: y,
                 width: width,
-                height: layer.type === 'text' ? this.template.height : height, // Prevent vertical clipping for text
+                height: height,
                 border_width: borderWidth,
                 borderWidth: borderWidth,
                 border_color: layer.borderColor || '#000000',
                 borderColor: layer.borderColor || '#000000',
-                stroke_width: 0
+                object_fit: imageFit,
+                objectFit: imageFit,
+                fit: imageFit,
+                stroke_width: 0,
+                z_index: index + 1
             });
         });
         
