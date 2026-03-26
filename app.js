@@ -188,16 +188,38 @@ class TemplateFlow {
     }
 
     calculateScale() {
-        // Mobile behavior: Smart auto-fit
-        if (window.innerWidth <= 768) {
-            const padding = 20;
-            const availableWidth = window.innerWidth - padding;
-            const scale = Math.min(1.0, availableWidth / 1200);
-            return Math.max(0.2, scale);
+        const canvasWidth = this.parseNumericValue(this.template.width, 1);
+        const canvasHeight = this.parseNumericValue(this.template.height, 1);
+        const desktopDefaultScale = 0.5;
+
+        if (!this.workspace) {
+            return desktopDefaultScale;
         }
 
-        // Desktop behavior: Fixed 50% scale for the overview
-        return 0.5;
+        const workspaceStyle = window.getComputedStyle(this.workspace);
+        const paddingX = parseFloat(workspaceStyle.paddingLeft || '0') + parseFloat(workspaceStyle.paddingRight || '0');
+        const paddingY = parseFloat(workspaceStyle.paddingTop || '0') + parseFloat(workspaceStyle.paddingBottom || '0');
+
+        const availableWidth = Math.max(120, this.workspace.clientWidth - paddingX - 24);
+        const availableHeight = Math.max(120, this.workspace.clientHeight - paddingY - 24);
+        const fitScale = Math.min(1, availableWidth / canvasWidth, availableHeight / canvasHeight);
+
+        if (window.innerWidth <= 768) {
+            return Math.max(0.2, fitScale);
+        }
+
+        // Keep desktop default at 50% when possible, but shrink on smaller viewports.
+        return Math.max(0.2, Math.min(desktopDefaultScale, fitScale));
+    }
+
+    getCenteredLayerPosition(layerWidth, layerHeight) {
+        const canvasWidth = this.parseNumericValue(this.template.width, 1);
+        const canvasHeight = this.parseNumericValue(this.template.height, 1);
+
+        return {
+            x: Math.max(0, Math.round((canvasWidth - layerWidth) / 2)),
+            y: Math.max(0, Math.round((canvasHeight - layerHeight) / 2))
+        };
     }
 
     // --- Custom Select Logic ---
@@ -352,15 +374,18 @@ class TemplateFlow {
 
     addLayer(type) {
         const id = `layer-${Date.now()}`;
+        const layerWidth = type === 'text' ? 400 : 200;
+        const layerHeight = type === 'text' ? 100 : 200;
+        const { x, y } = this.getCenteredLayerPosition(layerWidth, layerHeight);
         const newLayer = type === 'text' ? {
             id,
             layer: `text-${this.template.layers.length + 1}`,
             type: 'text',
             text: 'New Text',
-            x: 100,
-            y: 100,
-            width: 400,
-            height: 100,
+            x,
+            y,
+            width: layerWidth,
+            height: layerHeight,
             fontSize: 40,
             fontWeight: '400',
             letterSpacing: 0,
@@ -375,10 +400,10 @@ class TemplateFlow {
             layer: `image-${this.template.layers.length + 1}`,
             type: 'image',
             image_url: '', // Empty by default — user uploads via Supabase
-            x: 100,
-            y: 100,
-            width: 200,
-            height: 200,
+            x,
+            y,
+            width: layerWidth,
+            height: layerHeight,
             borderWidth: 0,
             borderColor: '#000000'
         };
